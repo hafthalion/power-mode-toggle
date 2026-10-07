@@ -17,7 +17,7 @@ using Microsoft.Win32;
 // Windows shows the FileDescription (AssemblyTitle) as the app name on notifications.
 [assembly: AssemblyTitle("Power Mode Toggle")]
 [assembly: AssemblyProduct("Power Mode Toggle")]
-[assembly: AssemblyVersion("1.2.1.0")]
+[assembly: AssemblyVersion("1.3.0.0")]
 
 namespace PowerModeToggle
 {
@@ -416,6 +416,24 @@ namespace PowerModeToggle
         }
     }
 
+    // Light/dark settings from Settings > Personalization > Colors.
+    static class Theme
+    {
+        static bool IsLight(string valueName)
+        {
+            using (var k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
+            {
+                var v = k == null ? null : k.GetValue(valueName);
+                return !(v is int) || (int)v != 0;
+            }
+        }
+
+        // "Windows mode": taskbar, Start, tray menus.
+        public static bool SystemIsDark { get { return !IsLight("SystemUsesLightTheme"); } }
+        // "App mode": app windows such as the About dialog.
+        public static bool AppsAreDark { get { return !IsLight("AppsUseLightTheme"); } }
+    }
+
     // Native menus are light unless the process opts into dark mode. uxtheme exports for this are
     // undocumented (by ordinal) but stable since Windows 10 1903; they're used by e.g. Notepad++.
     static class MenuTheme
@@ -428,28 +446,144 @@ namespace PowerModeToggle
         [DllImport("uxtheme.dll", EntryPoint = "#136")]
         static extern void FlushMenuThemes();
 
-        // Tray menus follow the Windows mode (taskbar/Start), not the app mode.
-        static bool SystemUsesLightTheme
-        {
-            get
-            {
-                using (var k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
-                {
-                    var v = k == null ? null : k.GetValue("SystemUsesLightTheme");
-                    return !(v is int) || (int)v != 0;
-                }
-            }
-        }
-
         // Call right before the menu opens so it picks up theme changes.
         public static void Apply()
         {
             try
             {
-                SetPreferredAppMode(SystemUsesLightTheme ? ForceLight : ForceDark);
+                SetPreferredAppMode(Theme.SystemIsDark ? ForceDark : ForceLight);
                 FlushMenuThemes();
             }
             catch { } // older Windows: menus stay light
+        }
+    }
+
+    // About window in the Windows 11 style; follows the light/dark app mode.
+    class AboutForm : Form
+    {
+        const string RepoUrl = "https://github.com/hafthalion/power-mode-toggle";
+
+        [DllImport("dwmapi.dll")]
+        static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+        const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20, DWMWA_USE_IMMERSIVE_DARK_MODE_OLD = 19; // 19 before Windows 10 20H1
+        const int DWMWA_CLOAK = 13;
+
+        [DllImport("user32.dll")]
+        static extern bool RedrawWindow(IntPtr hwnd, IntPtr rect, IntPtr region, uint flags);
+        const uint RDW_INVALIDATE = 0x1, RDW_ERASE = 0x4, RDW_ALLCHILDREN = 0x80, RDW_UPDATENOW = 0x100;
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        static extern uint PrivateExtractIcons(string file, int index, int cx, int cy, IntPtr[] icons, int[] ids, uint count, uint flags);
+        [DllImport("user32.dll")]
+        static extern bool DestroyIcon(IntPtr icon);
+
+        readonly bool dark = Theme.AppsAreDark;
+
+        public AboutForm(string hotkey)
+        {
+            float k;
+            using (var g = CreateGraphics()) k = g.DpiX / 96f;
+            Func<int, int> S = v => (int)Math.Round(v * k);
+
+            Color back = dark ? Color.FromArgb(32, 32, 32) : Color.White;
+            Color text = dark ? Color.White : Color.Black;
+            Color dim  = dark ? Color.FromArgb(170, 170, 170) : Color.FromArgb(96, 96, 96);
+            Color link = dark ? Color.FromArgb(96, 205, 255) : Color.FromArgb(0, 95, 184);
+
+            Text = "About Power Mode Toggle";
+            Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+            ShowIcon = false;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = MinimizeBox = false;
+            StartPosition = FormStartPosition.Manual; // centered in OnLoad, once AutoSize has set the final size
+            AutoSize = true;
+            AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            BackColor = back;
+            ForeColor = text;
+            Font = new Font("Segoe UI", 9f);
+            Padding = new Padding(S(24), S(20), S(24), S(16));
+
+            var layout = new TableLayoutPanel { ColumnCount = 2, RowCount = 2, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
+
+            var logo = AppIcon(S(48));
+            if (logo != null)
+                layout.Controls.Add(new PictureBox { Image = logo, SizeMode = PictureBoxSizeMode.AutoSize, Margin = new Padding(0, S(4), S(16), 0) }, 0, 0);
+
+            var info = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = Padding.Empty };
+            Func<string, Font, Color, int, Label> line = (s, font, color, gapBelow) => new Label
+            {
+                Text = s, Font = font, ForeColor = color, AutoSize = true,
+                MaximumSize = new Size(S(380), 0), Margin = new Padding(0, 0, 0, gapBelow)
+            };
+            info.Controls.Add(line("Power Mode Toggle", new Font("Segoe UI Semibold", 14f), text, 0));
+            info.Controls.Add(line("Version " + Assembly.GetExecutingAssembly().GetName().Version.ToString(3), Font, dim, S(14)));
+            info.Controls.Add(line("Switches the Windows power mode between Best efficiency and Best performance.", Font, text, S(14)));
+            info.Controls.Add(line("Hotkey:  " + hotkey, Font, text, S(6)));
+            info.Controls.Add(line("Settings file:", Font, text, 0));
+            info.Controls.Add(line(Settings.FilePath, Font, dim, S(14)));
+            var repo = new LinkLabel
+            {
+                Text = RepoUrl.Replace("https://", ""), AutoSize = true, Margin = Padding.Empty,
+                LinkColor = link, ActiveLinkColor = link, VisitedLinkColor = link, LinkBehavior = LinkBehavior.HoverUnderline
+            };
+            repo.LinkClicked += delegate { try { System.Diagnostics.Process.Start(RepoUrl); } catch { } };
+            info.Controls.Add(repo);
+            layout.Controls.Add(info, 1, 0);
+
+            var ok = new Button { Text = "OK", MinimumSize = new Size(S(96), S(32)), AutoSize = true, Anchor = AnchorStyles.Right, Margin = new Padding(0, S(20), 0, 0) };
+            if (dark)
+            {
+                ok.FlatStyle = FlatStyle.Flat;
+                ok.BackColor = Color.FromArgb(55, 55, 55);
+                ok.FlatAppearance.BorderColor = Color.FromArgb(85, 85, 85);
+                ok.FlatAppearance.MouseOverBackColor = Color.FromArgb(65, 65, 65);
+                ok.FlatAppearance.MouseDownBackColor = Color.FromArgb(45, 45, 45);
+            }
+            else ok.FlatStyle = FlatStyle.System;
+            ok.Click += delegate { Close(); };
+            layout.Controls.Add(ok, 0, 1);
+            layout.SetColumnSpan(ok, 2);
+
+            // AutoSize adds Padding only right/bottom of the content, so offset it by the left/top padding.
+            layout.Location = new Point(Padding.Left, Padding.Top);
+            Controls.Add(layout);
+            AcceptButton = CancelButton = ok;
+        }
+
+        protected override void OnLoad(EventArgs e)
+        {
+            PerformLayout();
+            var area = Screen.FromPoint(Cursor.Position).WorkingArea; // the screen with the tray icon that was clicked
+            Location = new Point(area.Left + (area.Width - Width) / 2, area.Top + (area.Height - Height) / 2);
+            base.OnLoad(e);
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            int on = 1;
+            // Keep the window invisible until it has painted (see OnShown); otherwise it flashes white first.
+            DwmSetWindowAttribute(Handle, DWMWA_CLOAK, ref on, 4);
+            if (dark && DwmSetWindowAttribute(Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref on, 4) != 0)
+                DwmSetWindowAttribute(Handle, DWMWA_USE_IMMERSIVE_DARK_MODE_OLD, ref on, 4);
+        }
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+            int off = 0;
+            DwmSetWindowAttribute(Handle, DWMWA_CLOAK, ref off, 4);
+        }
+
+        // The exe's embedded icon (app.ico) at an exact size, so it stays sharp at high DPI.
+        static Bitmap AppIcon(int size)
+        {
+            var handles = new IntPtr[1];
+            if (PrivateExtractIcons(Application.ExecutablePath, 0, size, size, handles, new int[1], 1, 0) != 1 || handles[0] == IntPtr.Zero)
+                return null;
+            try { using (var icon = Icon.FromHandle(handles[0])) return icon.ToBitmap(); }
+            finally { DestroyIcon(handles[0]); }
         }
     }
 
@@ -502,12 +636,13 @@ namespace PowerModeToggle
             {
                 try { System.Diagnostics.Process.Start("notepad.exe", "\"" + Settings.FilePath + "\""); } catch { }
             });
+            var miAbout = new MenuItem("About Power Mode Toggle", delegate { ShowAbout(hotkeyError == null); });
             var miExit = new MenuItem("Exit", delegate { ExitThread(); });
 
             var menu = new ContextMenu(new[] {
                 title, miEfficiency, miBalanced, miPerformance, new MenuItem("-"),
                 miToggle, new MenuItem("-"),
-                miAutostart, miNotify, miSettings, new MenuItem("-"), miExit });
+                miAutostart, miNotify, miSettings, new MenuItem("-"), miAbout, miExit });
             menu.Popup += delegate
             {
                 MenuTheme.Apply();
@@ -544,6 +679,19 @@ namespace PowerModeToggle
                        ToolTipIcon.Error);
             else if (notify && settings.ShowNotifications)
                 Notify(null, Label(mode), ToolTipIcon.None, mode);
+        }
+
+        AboutForm about;
+
+        void ShowAbout(bool hotkeyRegistered)
+        {
+            if (about == null)
+            {
+                about = new AboutForm(settings.Hotkey + (hotkeyRegistered ? "" : " (unavailable)"));
+                about.FormClosed += delegate { about = null; };
+                about.Show();
+            }
+            about.Activate(); // if it's already open, bring it to the front
         }
 
         void Refresh()

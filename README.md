@@ -13,6 +13,7 @@ A small Windows tray utility that switches the Windows power mode between **Best
   - Start with Windows.
   - Show notifications.
   - Edit the settings file.
+  - About (version, hotkey, settings location).
   - Exit.
 
   The menu is the native Windows menu and follows your light or dark Windows mode.
