@@ -53,7 +53,7 @@ ShowNotifications=true
 | `settings.ini` | Next to the exe | Your settings |
 | Start menu shortcut **Power Mode Toggle** | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\` | Windows only shows notification pop-ups from desktop apps that have one. It's re-created on every start, so it follows the exe if you move it. |
 | Notification images | `%TEMP%\PowerModeToggle\` | Mode icons for notifications, re-created when missing |
-| `PowerModeToggle` value | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | Only when **Start with Windows** is on |
+| `PowerModeToggle` value | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | Only when **Start with Windows** is on. Updated on every start, so it follows the exe if you move it. |
 
 ### Uninstall
 

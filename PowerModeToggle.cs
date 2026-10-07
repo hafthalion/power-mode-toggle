@@ -17,7 +17,7 @@ using Microsoft.Win32;
 // Windows shows the FileDescription (AssemblyTitle) as the app name on notifications.
 [assembly: AssemblyTitle("Power Mode Toggle")]
 [assembly: AssemblyProduct("Power Mode Toggle")]
-[assembly: AssemblyVersion("1.2.0.0")]
+[assembly: AssemblyVersion("1.2.1.0")]
 
 namespace PowerModeToggle
 {
@@ -108,16 +108,15 @@ namespace PowerModeToggle
 
         static string Command { get { return "\"" + Application.ExecutablePath + "\""; } }
 
+        static string Value
+        {
+            get { using (var k = Registry.CurrentUser.OpenSubKey(RunKey)) return k == null ? null : k.GetValue(Name) as string; }
+        }
+
+        // Enabled = our Run entry exists, wherever it points (see UpdatePath).
         public static bool IsEnabled
         {
-            get
-            {
-                using (var k = Registry.CurrentUser.OpenSubKey(RunKey))
-                {
-                    var v = k == null ? null : k.GetValue(Name) as string;
-                    return v != null && v.Equals(Command, StringComparison.OrdinalIgnoreCase);
-                }
-            }
+            get { return Value != null; }
             set
             {
                 using (var k = Registry.CurrentUser.CreateSubKey(RunKey))
@@ -126,6 +125,17 @@ namespace PowerModeToggle
                     else k.DeleteValue(Name, false);
                 }
             }
+        }
+
+        // Call at startup: if autostart is on but points elsewhere (e.g. the exe was moved), point it here.
+        public static void UpdatePath()
+        {
+            try
+            {
+                var v = Value;
+                if (v != null && !v.Equals(Command, StringComparison.OrdinalIgnoreCase)) IsEnabled = true;
+            }
+            catch { }
         }
     }
 
@@ -577,6 +587,7 @@ namespace PowerModeToggle
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 Toast.Register();
+                Autostart.UpdatePath();
                 Application.Run(new TrayApp());
             }
         }
