@@ -1,0 +1,584 @@
+// Power Mode Toggle - tray utility to switch the Windows power mode
+// (Best efficiency <-> Best performance) from the notification area or a global hotkey.
+//
+// Build: build.ps1 (uses the csc.exe that ships with .NET Framework 4.x, so C# 5 syntax only).
+
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.IO;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Threading;
+using System.Windows.Forms;
+using Microsoft.Win32;
+
+// Windows shows the FileDescription (AssemblyTitle) as the app name on notifications.
+[assembly: AssemblyTitle("Power Mode Toggle")]
+[assembly: AssemblyProduct("Power Mode Toggle")]
+[assembly: AssemblyVersion("1.2.0.0")]
+
+namespace PowerModeToggle
+{
+    enum PowerMode { Efficiency, Balanced, Performance, Unknown }
+
+    static class PowerApi
+    {
+        // Power mode "overlay" GUIDs used by Settings > System > Power.
+        static readonly Guid Efficiency  = new Guid("961cc777-2547-4f9d-8174-7d86181b8a7a");
+        static readonly Guid Balanced    = Guid.Empty;
+        static readonly Guid Performance = new Guid("ded574b5-45a0-4f42-8737-46345c09c238");
+
+        [DllImport("powrprof.dll")]
+        static extern uint PowerSetActiveOverlayScheme(Guid overlaySchemeGuid);
+
+        [DllImport("powrprof.dll")]
+        static extern uint PowerGetEffectiveOverlayScheme(out Guid effectiveOverlayGuid);
+
+        public static PowerMode Get()
+        {
+            Guid g;
+            if (PowerGetEffectiveOverlayScheme(out g) != 0) return PowerMode.Unknown;
+            if (g == Efficiency) return PowerMode.Efficiency;
+            if (g == Performance) return PowerMode.Performance;
+            if (g == Balanced) return PowerMode.Balanced;
+            return PowerMode.Unknown;
+        }
+
+        public static uint Set(PowerMode mode)
+        {
+            Guid g = mode == PowerMode.Efficiency ? Efficiency
+                   : mode == PowerMode.Performance ? Performance
+                   : Balanced;
+            return PowerSetActiveOverlayScheme(g);
+        }
+    }
+
+    class Settings
+    {
+        public string Hotkey = "Ctrl+Alt+P";
+        public bool ShowNotifications = true;
+
+        // Settings live next to the executable (portable).
+        public static string FilePath { get { return Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "settings.ini"); } }
+
+        public static Settings Load()
+        {
+            var s = new Settings();
+            try
+            {
+                if (!File.Exists(FilePath)) { s.Save(); return s; }
+                foreach (var raw in File.ReadAllLines(FilePath))
+                {
+                    var line = raw.Trim();
+                    if (line.Length == 0 || line.StartsWith(";") || line.StartsWith("#")) continue;
+                    int eq = line.IndexOf('=');
+                    if (eq < 0) continue;
+                    var key = line.Substring(0, eq).Trim().ToLowerInvariant();
+                    var val = line.Substring(eq + 1).Trim();
+                    if (key == "hotkey") s.Hotkey = val;
+                    else if (key == "shownotifications") s.ShowNotifications = !(val == "0" || val.Equals("false", StringComparison.OrdinalIgnoreCase));
+                }
+            }
+            catch { }
+            return s;
+        }
+
+        public void Save()
+        {
+            try
+            {
+                File.WriteAllLines(FilePath, new[]
+                {
+                    "; Power Mode Toggle settings. Restart the app after editing.",
+                    "; Hotkey: any combination of Ctrl, Alt, Shift, Win plus a key name, e.g. Ctrl+Alt+P, Win+Shift+F9",
+                    "Hotkey=" + Hotkey,
+                    "ShowNotifications=" + (ShowNotifications ? "true" : "false"),
+                });
+            }
+            catch { }
+        }
+    }
+
+    static class Autostart
+    {
+        const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+        const string Name = "PowerModeToggle";
+
+        static string Command { get { return "\"" + Application.ExecutablePath + "\""; } }
+
+        public static bool IsEnabled
+        {
+            get
+            {
+                using (var k = Registry.CurrentUser.OpenSubKey(RunKey))
+                {
+                    var v = k == null ? null : k.GetValue(Name) as string;
+                    return v != null && v.Equals(Command, StringComparison.OrdinalIgnoreCase);
+                }
+            }
+            set
+            {
+                using (var k = Registry.CurrentUser.CreateSubKey(RunKey))
+                {
+                    if (value) k.SetValue(Name, Command);
+                    else k.DeleteValue(Name, false);
+                }
+            }
+        }
+    }
+
+    // Hidden message-only window that receives WM_HOTKEY.
+    class HotkeyWindow : NativeWindow, IDisposable
+    {
+        const int WM_HOTKEY = 0x0312;
+        const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2, MOD_SHIFT = 0x4, MOD_WIN = 0x8, MOD_NOREPEAT = 0x4000;
+        const int Id = 1;
+        static readonly IntPtr HWND_MESSAGE = new IntPtr(-3);
+
+        [DllImport("user32.dll")]
+        static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+        [DllImport("user32.dll")]
+        static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+        public event EventHandler Pressed;
+        bool registered;
+
+        public HotkeyWindow()
+        {
+            CreateHandle(new CreateParams { Parent = HWND_MESSAGE });
+        }
+
+        // Returns null on success, or an error message.
+        public string Register(string spec)
+        {
+            uint mods = MOD_NOREPEAT;
+            Keys key = Keys.None;
+            foreach (var part in spec.Split('+'))
+            {
+                var p = part.Trim();
+                switch (p.ToLowerInvariant())
+                {
+                    case "ctrl": case "control": mods |= MOD_CONTROL; break;
+                    case "alt": mods |= MOD_ALT; break;
+                    case "shift": mods |= MOD_SHIFT; break;
+                    case "win": case "windows": mods |= MOD_WIN; break;
+                    default:
+                        if (p.Length == 1 && char.IsDigit(p[0])) p = "D" + p;
+                        try { key = (Keys)Enum.Parse(typeof(Keys), p, true); }
+                        catch { return "Unknown key \"" + part.Trim() + "\" in hotkey \"" + spec + "\"."; }
+                        break;
+                }
+            }
+            if (key == Keys.None) return "Hotkey \"" + spec + "\" has no key.";
+            registered = RegisterHotKey(Handle, Id, mods, (uint)key);
+            if (!registered) return "Hotkey " + spec + " is already in use by another program.";
+            return null;
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == Id && Pressed != null) Pressed(this, EventArgs.Empty);
+            base.WndProc(ref m);
+        }
+
+        public void Dispose()
+        {
+            if (registered) UnregisterHotKey(Handle, Id);
+            DestroyHandle();
+        }
+    }
+
+    // Start menu shortcut carrying our AppUserModelID. Windows only shows toast pop-ups from an
+    // unpackaged desktop app if such a shortcut exists; its name and icon become the toast header.
+    static class StartMenuShortcut
+    {
+        [ComImport, Guid("00021401-0000-0000-C000-000000000046")]
+        class CShellLink { }
+
+        [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("000214F9-0000-0000-C000-000000000046")]
+        interface IShellLinkW
+        {
+            void GetPath([MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder file, int cch, IntPtr fd, uint flags);
+            void GetIDList(out IntPtr pidl);
+            void SetIDList(IntPtr pidl);
+            void GetDescription([MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder name, int cch);
+            void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string name);
+            void GetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder dir, int cch);
+            void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string dir);
+            void GetArguments([MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder args, int cch);
+            void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string args);
+            void GetHotkey(out short hotkey);
+            void SetHotkey(short hotkey);
+            void GetShowCmd(out int showCmd);
+            void SetShowCmd(int showCmd);
+            void GetIconLocation([MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder path, int cch, out int index);
+            void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string path, int index);
+            void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string path, uint reserved);
+            void Resolve(IntPtr hwnd, uint flags);
+            void SetPath([MarshalAs(UnmanagedType.LPWStr)] string file);
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 4)]
+        struct PROPERTYKEY { public Guid fmtid; public uint pid; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct PROPVARIANT { public ushort vt, r1, r2, r3; public IntPtr p, p2; }
+
+        [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")]
+        interface IPropertyStore
+        {
+            void GetCount(out uint count);
+            void GetAt(uint index, out PROPERTYKEY key);
+            void GetValue(ref PROPERTYKEY key, out PROPVARIANT value);
+            void SetValue(ref PROPERTYKEY key, ref PROPVARIANT value);
+            void Commit();
+        }
+
+        const ushort VT_LPWSTR = 31;
+        static readonly PROPERTYKEY PKEY_AppUserModel_ID = new PROPERTYKEY { fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), pid = 5 };
+
+        // Points at this exe, so it also uses the exe's embedded icon (app.ico).
+        public static void CreateOrUpdate(string name, string aumid)
+        {
+            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), name + ".lnk");
+            var link = (IShellLinkW)new CShellLink();
+            link.SetPath(Application.ExecutablePath);
+            link.SetWorkingDirectory(Path.GetDirectoryName(Application.ExecutablePath));
+            link.SetDescription("Switch the Windows power mode from the notification area");
+
+            var value = new PROPVARIANT { vt = VT_LPWSTR, p = Marshal.StringToCoTaskMemUni(aumid) };
+            try
+            {
+                var key = PKEY_AppUserModel_ID;
+                var store = (IPropertyStore)link;
+                store.SetValue(ref key, ref value);
+                store.Commit();
+            }
+            finally { Marshal.FreeCoTaskMem(value.p); }
+
+            ((System.Runtime.InteropServices.ComTypes.IPersistFile)link).Save(path, true);
+            Marshal.ReleaseComObject(link);
+        }
+    }
+
+    // Modern Windows notifications (WinRT toasts). Classic tray balloons are converted to toasts
+    // by Windows 10/11 but lose their custom icon, so we send toasts directly.
+    static class Toast
+    {
+        const string Aumid = "PowerModeToggle";
+        const string AppName = "Power Mode Toggle";
+        static readonly string ImageDir = Path.Combine(Path.GetTempPath(), "PowerModeToggle");
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
+
+        static Type WinRT(string type, string assembly)
+        {
+            return Type.GetType(type + ", " + assembly + ", ContentType=WindowsRuntime", true);
+        }
+
+        static string Image(PowerMode mode)
+        {
+            var path = Path.Combine(ImageDir, mode.ToString().ToLowerInvariant() + ".png");
+            if (!File.Exists(path))
+            {
+                Directory.CreateDirectory(ImageDir);
+                // Windows shows the logo at a fixed size; transparent padding makes the icon look smaller.
+                const int Canvas = 128, IconSize = 88;
+                using (var bmp = new Bitmap(Canvas, Canvas))
+                using (var icon = Icons.Draw(mode, IconSize))
+                {
+                    using (var g = Graphics.FromImage(bmp))
+                    {
+                        g.Clear(Color.Transparent);
+                        g.DrawImage(icon, (Canvas - IconSize) / 2, (Canvas - IconSize) / 2, IconSize, IconSize);
+                    }
+                    bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+                }
+            }
+            return path;
+        }
+
+        // Call once at startup. Re-creating the shortcut each time keeps it valid if the exe moves.
+        public static void Register()
+        {
+            try { SetCurrentProcessExplicitAppUserModelID(Aumid); } catch { }
+            try { StartMenuShortcut.CreateOrUpdate(AppName, Aumid); } catch { }
+        }
+
+        // Mode toasts (with a logo) are silent and replace each other; messages use the default sound.
+        // Returns false if toasts are unavailable, so the caller can fall back to a balloon.
+        public static bool Show(string title, string text, PowerMode? logo)
+        {
+            try
+            {
+                var esc = new Func<string, string>(System.Security.SecurityElement.Escape);
+                var xml = "<toast duration=\"short\"><visual><binding template=\"ToastGeneric\">"
+                        + (logo.HasValue ? "<image placement=\"appLogoOverride\" src=\"" + esc(new Uri(Image(logo.Value)).AbsoluteUri) + "\"/>" : "")
+                        + (string.IsNullOrEmpty(title) ? "" : "<text>" + esc(title) + "</text>")
+                        + "<text>" + esc(text) + "</text>"
+                        + "</binding></visual>" + (logo.HasValue ? "<audio silent=\"true\"/>" : "") + "</toast>";
+
+                var docType = WinRT("Windows.Data.Xml.Dom.XmlDocument", "Windows.Data.Xml.Dom");
+                var doc = Activator.CreateInstance(docType);
+                docType.GetMethod("LoadXml", new[] { typeof(string) }).Invoke(doc, new object[] { xml });
+
+                var toastType = WinRT("Windows.UI.Notifications.ToastNotification", "Windows.UI.Notifications");
+                var toast = Activator.CreateInstance(toastType, doc);
+                // Same tag/group => a new toast replaces the previous one instead of stacking up.
+                toastType.GetProperty("Tag").SetValue(toast, logo.HasValue ? "mode" : "message");
+                toastType.GetProperty("Group").SetValue(toast, Aumid);
+                toastType.GetProperty("ExpirationTime").SetValue(toast, (DateTimeOffset?)DateTimeOffset.Now.AddSeconds(15));
+
+                var managerType = WinRT("Windows.UI.Notifications.ToastNotificationManager", "Windows.UI.Notifications");
+                var notifier = managerType.GetMethod("CreateToastNotifier", new[] { typeof(string) }).Invoke(null, new object[] { Aumid });
+                WinRT("Windows.UI.Notifications.ToastNotifier", "Windows.UI.Notifications")
+                    .GetMethod("Show").Invoke(notifier, new[] { toast });
+                return true;
+            }
+            catch { return false; }
+        }
+    }
+
+    // Mode icons, drawn at runtime: tray icon and notification logo.
+    // (app.ico, the exe icon, is the Performance glyph on the Balanced blue.)
+    static class Icons
+    {
+        public static Icon Make(PowerMode mode)
+        {
+            using (var bmp = Draw(mode, 32)) return Icon.FromHandle(bmp.GetHicon());
+        }
+
+        public static Bitmap Draw(PowerMode mode, int size)
+        {
+            const int S = 32; // shapes are designed on a 32x32 grid and scaled
+            var bmp = new Bitmap(size, size);
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.Clear(Color.Transparent);
+                g.ScaleTransform(size / (float)S, size / (float)S);
+
+                Color bg = mode == PowerMode.Efficiency ? Color.FromArgb(46, 160, 67)
+                         : mode == PowerMode.Performance ? Color.FromArgb(232, 96, 28)
+                         : mode == PowerMode.Balanced ? Color.FromArgb(0, 120, 212)
+                         : Color.Gray;
+                using (var b = new SolidBrush(bg)) g.FillEllipse(b, 0, 0, S - 1, S - 1);
+
+                using (var w = new SolidBrush(Color.White))
+                using (var path = new GraphicsPath())
+                {
+                    if (mode == PowerMode.Performance)
+                    {
+                        // Lightning bolt
+                        path.AddPolygon(new[] {
+                            new PointF(18, 3), new PointF(7, 18), new PointF(15, 18),
+                            new PointF(13, 29), new PointF(25, 13), new PointF(17, 13), new PointF(18, 3) });
+                        g.FillPath(w, path);
+                    }
+                    else if (mode == PowerMode.Efficiency)
+                    {
+                        // Leaf: two arcs meeting at the tips, plus a stem
+                        path.AddBezier(7, 25, 6, 12, 14, 6, 26, 6);
+                        path.AddBezier(26, 6, 26, 18, 20, 26, 7, 25);
+                        g.FillPath(w, path);
+                        using (var pen = new Pen(bg, 2f)) g.DrawLine(pen, 9, 23, 20, 12);
+                    }
+                    else if (mode == PowerMode.Balanced)
+                    {
+                        // Half-filled circle
+                        using (var pen = new Pen(Color.White, 3f)) g.DrawEllipse(pen, 7, 7, 18, 18);
+                        g.FillPie(w, 7, 7, 18, 18, 90, 180);
+                    }
+                    else
+                    {
+                        using (var f = new Font("Segoe UI", 16f, FontStyle.Bold, GraphicsUnit.Pixel))
+                        {
+                            var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                            g.DrawString("?", f, w, new RectangleF(0, 0, S, S), sf);
+                        }
+                    }
+                }
+            }
+            return bmp;
+        }
+    }
+
+    // Native menus are light unless the process opts into dark mode. uxtheme exports for this are
+    // undocumented (by ordinal) but stable since Windows 10 1903; they're used by e.g. Notepad++.
+    static class MenuTheme
+    {
+        const int ForceDark = 2, ForceLight = 3;
+
+        [DllImport("uxtheme.dll", EntryPoint = "#135")]
+        static extern int SetPreferredAppMode(int mode);
+
+        [DllImport("uxtheme.dll", EntryPoint = "#136")]
+        static extern void FlushMenuThemes();
+
+        // Tray menus follow the Windows mode (taskbar/Start), not the app mode.
+        static bool SystemUsesLightTheme
+        {
+            get
+            {
+                using (var k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
+                {
+                    var v = k == null ? null : k.GetValue("SystemUsesLightTheme");
+                    return !(v is int) || (int)v != 0;
+                }
+            }
+        }
+
+        // Call right before the menu opens so it picks up theme changes.
+        public static void Apply()
+        {
+            try
+            {
+                SetPreferredAppMode(SystemUsesLightTheme ? ForceLight : ForceDark);
+                FlushMenuThemes();
+            }
+            catch { } // older Windows: menus stay light
+        }
+    }
+
+    class TrayApp : ApplicationContext
+    {
+        readonly Settings settings = Settings.Load();
+        readonly NotifyIcon tray = new NotifyIcon();
+        readonly Dictionary<PowerMode, Icon> icons = new Dictionary<PowerMode, Icon>();
+        readonly HotkeyWindow hotkey = new HotkeyWindow();
+        readonly System.Windows.Forms.Timer poll = new System.Windows.Forms.Timer { Interval = 2000 };
+        readonly MenuItem miEfficiency, miBalanced, miPerformance, miAutostart, miNotify;
+        PowerMode current = PowerMode.Unknown;
+
+        static string Label(PowerMode m)
+        {
+            switch (m)
+            {
+                case PowerMode.Efficiency: return "Best efficiency";
+                case PowerMode.Balanced: return "Balanced";
+                case PowerMode.Performance: return "Best performance";
+                default: return "Unknown";
+            }
+        }
+
+        public TrayApp()
+        {
+            foreach (PowerMode m in Enum.GetValues(typeof(PowerMode))) icons[m] = Icons.Make(m);
+
+            string hotkeyError = hotkey.Register(settings.Hotkey);
+            hotkey.Pressed += delegate { Toggle(true); }; // notify: there's no other feedback for a hotkey
+
+            // Native Win32 menu (not ContextMenuStrip): gets the Windows 11 look and follows the dark theme.
+            var title = new MenuItem("Power mode") { Enabled = false };
+            miEfficiency  = new MenuItem(Label(PowerMode.Efficiency),  delegate { Apply(PowerMode.Efficiency, false); })  { RadioCheck = true };
+            miBalanced    = new MenuItem(Label(PowerMode.Balanced),    delegate { Apply(PowerMode.Balanced, false); })    { RadioCheck = true };
+            miPerformance = new MenuItem(Label(PowerMode.Performance), delegate { Apply(PowerMode.Performance, false); }) { RadioCheck = true };
+            var miToggle  = new MenuItem("Toggle efficiency / performance\t" + (hotkeyError == null ? settings.Hotkey : "(hotkey unavailable)"),
+                                         delegate { Toggle(false); }) { DefaultItem = true }; // bold = left-click action
+            miAutostart = new MenuItem("Start with Windows", delegate
+            {
+                try { Autostart.IsEnabled = !Autostart.IsEnabled; }
+                catch (Exception ex) { Notify("Could not change autostart", ex.Message, ToolTipIcon.Error); }
+            });
+            miNotify = new MenuItem("Show notifications", delegate
+            {
+                settings.ShowNotifications = !settings.ShowNotifications;
+                settings.Save();
+            });
+            var miSettings = new MenuItem("Edit settings file...", delegate
+            {
+                try { System.Diagnostics.Process.Start("notepad.exe", "\"" + Settings.FilePath + "\""); } catch { }
+            });
+            var miExit = new MenuItem("Exit", delegate { ExitThread(); });
+
+            var menu = new ContextMenu(new[] {
+                title, miEfficiency, miBalanced, miPerformance, new MenuItem("-"),
+                miToggle, new MenuItem("-"),
+                miAutostart, miNotify, miSettings, new MenuItem("-"), miExit });
+            menu.Popup += delegate
+            {
+                MenuTheme.Apply();
+                Refresh();
+                miAutostart.Checked = Autostart.IsEnabled;
+                miNotify.Checked = settings.ShowNotifications;
+            };
+
+            tray.ContextMenu = menu;
+            tray.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) Toggle(false); };
+            tray.Visible = true;
+
+            poll.Tick += delegate { Refresh(); };
+            poll.Start();
+            Refresh();
+
+            if (hotkeyError != null)
+                Notify("Hotkey unavailable", hotkeyError + " Edit the settings file to choose another.", ToolTipIcon.Warning);
+        }
+
+        void Toggle(bool notify)
+        {
+            var target = PowerApi.Get() == PowerMode.Performance ? PowerMode.Efficiency : PowerMode.Performance;
+            Apply(target, notify);
+        }
+
+        void Apply(PowerMode mode, bool notify)
+        {
+            uint err = PowerApi.Set(mode);
+            Refresh();
+            if (err != 0 || current != mode)
+                Notify("Could not switch to " + Label(mode),
+                       "Error " + err + ". Power modes are only available while the Balanced power plan is active.",
+                       ToolTipIcon.Error);
+            else if (notify && settings.ShowNotifications)
+                Notify(null, Label(mode), ToolTipIcon.None, mode);
+        }
+
+        void Refresh()
+        {
+            var mode = PowerApi.Get();
+            miEfficiency.Checked = mode == PowerMode.Efficiency;
+            miBalanced.Checked = mode == PowerMode.Balanced;
+            miPerformance.Checked = mode == PowerMode.Performance;
+            if (mode == current) return;
+            current = mode;
+            tray.Icon = icons[mode];
+            var tip = "Power mode: " + Label(mode) + "\nClick to toggle (" + settings.Hotkey + ")";
+            tray.Text = tip.Length > 63 ? tip.Substring(0, 63) : tip; // NotifyIcon limit
+        }
+
+        void Notify(string title, string text, ToolTipIcon kind, PowerMode? logo = null)
+        {
+            if (!Toast.Show(title, text, logo))
+                tray.ShowBalloonTip(3000, title ?? "", text, kind);
+        }
+
+        protected override void ExitThreadCore()
+        {
+            poll.Stop();
+            tray.Visible = false;
+            tray.Dispose();
+            hotkey.Dispose();
+            base.ExitThreadCore();
+        }
+    }
+
+    static class Program
+    {
+        [STAThread]
+        static void Main()
+        {
+            bool created;
+            using (new Mutex(true, @"Local\PowerModeToggle.SingleInstance", out created))
+            {
+                if (!created) return;
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                Toast.Register();
+                Application.Run(new TrayApp());
+            }
+        }
+    }
+}
