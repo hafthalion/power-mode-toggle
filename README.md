@@ -37,7 +37,7 @@ Only one instance runs at a time; starting it again does nothing.
 
 ## Settings
 
-`settings.ini` is created next to the exe on first start. Restart the app after editing it.
+`PowerModeToggle.ini` is created next to the exe on first start (a `settings.ini` from version 1.3.0 or earlier is renamed automatically). Restart the app after editing it.
 
 ```ini
 Hotkey=Ctrl+Alt+P
@@ -51,7 +51,7 @@ ShowNotifications=true
 
 | What | Where | Why |
 |---|---|---|
-| `settings.ini` | Next to the exe | Your settings |
+| `PowerModeToggle.ini` | Next to the exe | Your settings |
 | Start menu shortcut **Power Mode Toggle** | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\` | Windows only shows notification pop-ups from desktop apps that have one. It's re-created on every start, so it follows the exe if you move it. |
 | Notification images | `%TEMP%\PowerModeToggle\` | Mode icons for notifications, re-created when missing |
 | `PowerModeToggle` value | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | Only when **Start with Windows** is on. Updated on every start, so it follows the exe if you move it. |

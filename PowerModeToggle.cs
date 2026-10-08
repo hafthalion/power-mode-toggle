@@ -17,7 +17,7 @@ using Microsoft.Win32;
 // Windows shows the FileDescription (AssemblyTitle) as the app name on notifications.
 [assembly: AssemblyTitle("Power Mode Toggle")]
 [assembly: AssemblyProduct("Power Mode Toggle")]
-[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyVersion("1.3.1.0")]
 
 namespace PowerModeToggle
 {
@@ -61,13 +61,16 @@ namespace PowerModeToggle
         public bool ShowNotifications = true;
 
         // Settings live next to the executable (portable).
-        public static string FilePath { get { return Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "settings.ini"); } }
+        static string Dir { get { return Path.GetDirectoryName(Application.ExecutablePath); } }
+        public static string FilePath { get { return Path.Combine(Dir, "PowerModeToggle.ini"); } }
+        static string OldFilePath { get { return Path.Combine(Dir, "settings.ini"); } } // name before 1.3.1
 
         public static Settings Load()
         {
             var s = new Settings();
             try
             {
+                if (!File.Exists(FilePath) && File.Exists(OldFilePath)) File.Move(OldFilePath, FilePath);
                 if (!File.Exists(FilePath)) { s.Save(); return s; }
                 foreach (var raw in File.ReadAllLines(FilePath))
                 {
