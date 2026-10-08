@@ -17,7 +17,7 @@ using Microsoft.Win32;
 // Windows shows the FileDescription (AssemblyTitle) as the app name on notifications.
 [assembly: AssemblyTitle("Power Mode Toggle")]
 [assembly: AssemblyProduct("Power Mode Toggle")]
-[assembly: AssemblyVersion("1.5.0.0")]
+[assembly: AssemblyVersion("1.5.1.0")]
 
 namespace PowerModeToggle
 {
@@ -36,8 +36,49 @@ namespace PowerModeToggle
         [DllImport("powrprof.dll")]
         static extern uint PowerGetEffectiveOverlayScheme(out Guid effectiveOverlayGuid);
 
+        // Power modes only take effect with the Balanced power plan. With another plan, Windows
+        // stores the mode but ignores it, and the effective mode always reads as Balanced.
+        static readonly Guid BalancedPlan = new Guid("381b4222-f694-41f0-9685-ff5bb260df2e");
+
+        [DllImport("powrprof.dll")]
+        static extern uint PowerGetActiveScheme(IntPtr userRootPowerKey, out IntPtr activePolicyGuid);
+
+        [DllImport("powrprof.dll")]
+        static extern uint PowerSetActiveScheme(IntPtr userRootPowerKey, ref Guid schemeGuid);
+
+        [DllImport("powrprof.dll")]
+        static extern uint PowerReadFriendlyName(IntPtr rootPowerKey, ref Guid schemeGuid, IntPtr subGroupOfPowerSettingsGuid,
+                                                 IntPtr powerSettingGuid, byte[] buffer, ref uint bufferSize);
+
+        [DllImport("kernel32.dll")]
+        static extern IntPtr LocalFree(IntPtr hMem);
+
+        static Guid? ActivePlan()
+        {
+            IntPtr p;
+            if (PowerGetActiveScheme(IntPtr.Zero, out p) != 0) return null;
+            try { return (Guid)Marshal.PtrToStructure(p, typeof(Guid)); }
+            finally { LocalFree(p); }
+        }
+
+        // Name of the active power plan if it isn't Balanced, otherwise null.
+        public static string OtherPlanName()
+        {
+            var plan = ActivePlan();
+            if (plan == null || plan.Value == BalancedPlan) return null;
+            var g = plan.Value;
+            uint size = 0;
+            PowerReadFriendlyName(IntPtr.Zero, ref g, IntPtr.Zero, IntPtr.Zero, null, ref size);
+            var buf = new byte[size];
+            if (size == 0 || PowerReadFriendlyName(IntPtr.Zero, ref g, IntPtr.Zero, IntPtr.Zero, buf, ref size) != 0)
+                return "another";
+            return System.Text.Encoding.Unicode.GetString(buf).TrimEnd('\0');
+        }
+
         public static PowerMode Get()
         {
+            var plan = ActivePlan();
+            if (plan != null && plan.Value != BalancedPlan) return PowerMode.Unknown;
             Guid g;
             if (PowerGetEffectiveOverlayScheme(out g) != 0) return PowerMode.Unknown;
             if (g == Efficiency) return PowerMode.Efficiency;
@@ -46,8 +87,16 @@ namespace PowerModeToggle
             return PowerMode.Unknown;
         }
 
+        // Switches to the Balanced power plan first if another plan is active.
         public static uint Set(PowerMode mode)
         {
+            var plan = ActivePlan();
+            if (plan == null || plan.Value != BalancedPlan)
+            {
+                var balanced = BalancedPlan;
+                uint err = PowerSetActiveScheme(IntPtr.Zero, ref balanced);
+                if (err != 0) return err;
+            }
             Guid g = mode == PowerMode.Efficiency ? Efficiency
                    : mode == PowerMode.Performance ? Performance
                    : Balanced;
@@ -734,7 +783,7 @@ namespace PowerModeToggle
             Refresh();
             if (err != 0 || current != mode)
                 Notify("Could not switch to " + Label(mode),
-                       "Error " + err + ". Power modes are only available while the Balanced power plan is active.",
+                       "Error " + err + ". Power modes need the Balanced power plan, which may be missing on this PC.",
                        ToolTipIcon.Error);
             else if (notify && settings.ShowNotifications)
                 Notify(null, Label(mode), ToolTipIcon.None, mode);
@@ -759,11 +808,47 @@ namespace PowerModeToggle
             miEfficiency.Checked = mode == PowerMode.Efficiency;
             miBalanced.Checked = mode == PowerMode.Balanced;
             miPerformance.Checked = mode == PowerMode.Performance;
-            if (mode == current) return;
+            var otherPlan = mode == PowerMode.Unknown ? PowerApi.OtherPlanName() : null;
+            if (mode == current && otherPlan == currentOtherPlan) return;
             current = mode;
+            currentOtherPlan = otherPlan;
             tray.Icon = icons[mode];
-            var tip = "Power mode: " + Label(mode) + "\nClick to toggle" + (string.IsNullOrEmpty(toggleHint) ? "" : " (" + toggleHint + ")");
-            tray.Text = tip.Length > 63 ? tip.Substring(0, 63) : tip; // NotifyIcon limit
+            var hint = string.IsNullOrEmpty(toggleHint) ? "" : " (" + toggleHint + ")";
+            if (otherPlan == null)
+            {
+                SetTooltip("Power mode: " + Label(mode) + "\nClick to toggle" + hint);
+                return;
+            }
+            var rest = "\nPower modes only work with the Balanced plan.\nClick to switch to it and toggle" + hint;
+            var head = "Power plan: " + otherPlan;
+            int room = TooltipMax - rest.Length; // shorten a long plan name, keep the explanation
+            if (head.Length > room) head = head.Substring(0, Math.Max(0, room - 3)) + "...";
+            SetTooltip(head + rest);
+        }
+
+        string currentOtherPlan; // name of the active power plan when it isn't Balanced
+
+        // Windows allows 127 tooltip characters, but NotifyIcon.Text rejects more than 63.
+        // Set its private field and refresh the icon instead; fall back to the shortened text.
+        const int TooltipMax = 127;
+
+        void SetTooltip(string tip)
+        {
+            if (tip.Length > TooltipMax) tip = tip.Substring(0, TooltipMax);
+            if (tip.Length > 63)
+            {
+                try
+                {
+                    const BindingFlags f = BindingFlags.Instance | BindingFlags.NonPublic;
+                    var t = typeof(NotifyIcon);
+                    t.GetField("text", f).SetValue(tray, tip);
+                    if ((bool)t.GetField("added", f).GetValue(tray))
+                        t.GetMethod("UpdateIcon", f).Invoke(tray, new object[] { true });
+                    return;
+                }
+                catch { tip = tip.Substring(0, 63); }
+            }
+            tray.Text = tip;
         }
 
         void Notify(string title, string text, ToolTipIcon kind, PowerMode? logo = null)
