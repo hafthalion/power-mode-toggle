@@ -17,7 +17,7 @@ using Microsoft.Win32;
 // Windows shows the FileDescription (AssemblyTitle) as the app name on notifications.
 [assembly: AssemblyTitle("Power Mode Toggle")]
 [assembly: AssemblyProduct("Power Mode Toggle")]
-[assembly: AssemblyVersion("1.3.1.0")]
+[assembly: AssemblyVersion("1.4.0.0")]
 
 namespace PowerModeToggle
 {
@@ -57,8 +57,13 @@ namespace PowerModeToggle
 
     class Settings
     {
-        public string Hotkey = "Ctrl+Alt+P";
+        // Ctrl+Alt+<letter> is AltGr on many layouts; these letters type nothing with AltGr on German/Czech layouts.
+        public string ToggleHotkey = "Ctrl+Alt+T";
+        public string EfficiencyHotkey = "Ctrl+Alt+L";
+        public string PerformanceHotkey = "Ctrl+Alt+P";
         public bool ShowNotifications = true;
+
+        const string OldDefaultHotkey = "Ctrl+Alt+P"; // the single "Hotkey" (toggle) setting before 1.4.0
 
         // Settings live next to the executable (portable).
         static string Dir { get { return Path.GetDirectoryName(Application.ExecutablePath); } }
@@ -72,6 +77,9 @@ namespace PowerModeToggle
             {
                 if (!File.Exists(FilePath) && File.Exists(OldFilePath)) File.Move(OldFilePath, FilePath);
                 if (!File.Exists(FilePath)) { s.Save(); return s; }
+
+                var seen = new HashSet<string>();
+                string oldHotkey = null;
                 foreach (var raw in File.ReadAllLines(FilePath))
                 {
                     var line = raw.Trim();
@@ -80,9 +88,20 @@ namespace PowerModeToggle
                     if (eq < 0) continue;
                     var key = line.Substring(0, eq).Trim().ToLowerInvariant();
                     var val = line.Substring(eq + 1).Trim();
-                    if (key == "hotkey") s.Hotkey = val;
+                    seen.Add(key);
+                    if (key == "togglehotkey") s.ToggleHotkey = val;
+                    else if (key == "efficiencyhotkey") s.EfficiencyHotkey = val;
+                    else if (key == "performancehotkey") s.PerformanceHotkey = val;
                     else if (key == "shownotifications") s.ShowNotifications = !(val == "0" || val.Equals("false", StringComparison.OrdinalIgnoreCase));
+                    else if (key == "hotkey") oldHotkey = val;
                 }
+
+                // Keep a customized toggle hotkey from older versions; the old default becomes Ctrl+Alt+T.
+                if (!seen.Contains("togglehotkey") && oldHotkey != null && !oldHotkey.Equals(OldDefaultHotkey, StringComparison.OrdinalIgnoreCase))
+                    s.ToggleHotkey = oldHotkey;
+                // Rewrite files from older versions so they list every setting.
+                if (!(seen.Contains("togglehotkey") && seen.Contains("efficiencyhotkey") && seen.Contains("performancehotkey") && seen.Contains("shownotifications")))
+                    s.Save();
             }
             catch { }
             return s;
@@ -95,8 +114,11 @@ namespace PowerModeToggle
                 File.WriteAllLines(FilePath, new[]
                 {
                     "; Power Mode Toggle settings. Restart the app after editing.",
-                    "; Hotkey: any combination of Ctrl, Alt, Shift, Win plus a key name, e.g. Ctrl+Alt+P, Win+Shift+F9",
-                    "Hotkey=" + Hotkey,
+                    "; Hotkeys: any combination of Ctrl, Alt, Shift, Win plus a key name, e.g. Ctrl+Alt+P, Win+Shift+F9.",
+                    "; Leave a hotkey empty to turn it off.",
+                    "ToggleHotkey=" + ToggleHotkey,
+                    "EfficiencyHotkey=" + EfficiencyHotkey,
+                    "PerformanceHotkey=" + PerformanceHotkey,
                     "ShowNotifications=" + (ShowNotifications ? "true" : "false"),
                 });
             }
@@ -147,7 +169,6 @@ namespace PowerModeToggle
     {
         const int WM_HOTKEY = 0x0312;
         const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2, MOD_SHIFT = 0x4, MOD_WIN = 0x8, MOD_NOREPEAT = 0x4000;
-        const int Id = 1;
         static readonly IntPtr HWND_MESSAGE = new IntPtr(-3);
 
         [DllImport("user32.dll")]
@@ -155,17 +176,17 @@ namespace PowerModeToggle
         [DllImport("user32.dll")]
         static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
-        public event EventHandler Pressed;
-        bool registered;
+        readonly Dictionary<int, Action> actions = new Dictionary<int, Action>(); // by hotkey id
 
         public HotkeyWindow()
         {
             CreateHandle(new CreateParams { Parent = HWND_MESSAGE });
         }
 
-        // Returns null on success, or an error message.
-        public string Register(string spec)
+        // Returns null on success or for an empty spec (hotkey turned off), otherwise an error message.
+        public string Register(string spec, Action action)
         {
+            if (string.IsNullOrWhiteSpace(spec)) return null;
             uint mods = MOD_NOREPEAT;
             Keys key = Keys.None;
             foreach (var part in spec.Split('+'))
@@ -185,20 +206,22 @@ namespace PowerModeToggle
                 }
             }
             if (key == Keys.None) return "Hotkey \"" + spec + "\" has no key.";
-            registered = RegisterHotKey(Handle, Id, mods, (uint)key);
-            if (!registered) return "Hotkey " + spec + " is already in use by another program.";
+            int id = actions.Count + 1;
+            if (!RegisterHotKey(Handle, id, mods, (uint)key)) return "Hotkey " + spec + " is already in use by another program.";
+            actions[id] = action;
             return null;
         }
 
         protected override void WndProc(ref Message m)
         {
-            if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == Id && Pressed != null) Pressed(this, EventArgs.Empty);
+            Action action;
+            if (m.Msg == WM_HOTKEY && actions.TryGetValue(m.WParam.ToInt32(), out action)) action();
             base.WndProc(ref m);
         }
 
         public void Dispose()
         {
-            if (registered) UnregisterHotKey(Handle, Id);
+            foreach (var id in actions.Keys) UnregisterHotKey(Handle, id);
             DestroyHandle();
         }
     }
@@ -482,7 +505,7 @@ namespace PowerModeToggle
 
         readonly bool dark = Theme.AppsAreDark;
 
-        public AboutForm(string hotkey)
+        public AboutForm(string hotkeys) // one "name:  key" per line
         {
             float k;
             using (var g = CreateGraphics()) k = g.DpiX / 96f;
@@ -521,7 +544,8 @@ namespace PowerModeToggle
             info.Controls.Add(line("Power Mode Toggle", new Font("Segoe UI Semibold", 14f), text, 0));
             info.Controls.Add(line("Version " + Assembly.GetExecutingAssembly().GetName().Version.ToString(3), Font, dim, S(14)));
             info.Controls.Add(line("Switches the Windows power mode between Best efficiency and Best performance.", Font, text, S(14)));
-            info.Controls.Add(line("Hotkey:  " + hotkey, Font, text, S(6)));
+            info.Controls.Add(line("Hotkeys:", Font, text, 0));
+            info.Controls.Add(line(hotkeys, Font, dim, S(10)));
             info.Controls.Add(line("Settings file:", Font, text, 0));
             info.Controls.Add(line(Settings.FilePath, Font, dim, S(14)));
             var repo = new LinkLabel
@@ -595,9 +619,10 @@ namespace PowerModeToggle
         readonly Settings settings = Settings.Load();
         readonly NotifyIcon tray = new NotifyIcon();
         readonly Dictionary<PowerMode, Icon> icons = new Dictionary<PowerMode, Icon>();
-        readonly HotkeyWindow hotkey = new HotkeyWindow();
+        readonly HotkeyWindow hotkeys = new HotkeyWindow();
         readonly System.Windows.Forms.Timer poll = new System.Windows.Forms.Timer { Interval = 2000 };
         readonly MenuItem miEfficiency, miBalanced, miPerformance, miAutostart, miNotify;
+        readonly string toggleHint, aboutHotkeys; // hotkey texts for the tooltip and the About window
         PowerMode current = PowerMode.Unknown;
 
         static string Label(PowerMode m)
@@ -615,15 +640,29 @@ namespace PowerModeToggle
         {
             foreach (PowerMode m in Enum.GetValues(typeof(PowerMode))) icons[m] = Icons.Make(m);
 
-            string hotkeyError = hotkey.Register(settings.Hotkey);
-            hotkey.Pressed += delegate { Toggle(true); }; // notify: there's no other feedback for a hotkey
+            // Hotkeys notify on use: there's no other feedback for them.
+            var hotkeyErrors = new List<string>();
+            Func<string, Action, string> register = (spec, action) =>
+            {
+                var error = hotkeys.Register(spec, action);
+                if (error == null) return spec.Trim();
+                hotkeyErrors.Add(error);
+                return "(unavailable)";
+            };
+            string toggleKey      = register(settings.ToggleHotkey,      () => Toggle(true));
+            string efficiencyKey  = register(settings.EfficiencyHotkey,  () => Apply(PowerMode.Efficiency, true));
+            string performanceKey = register(settings.PerformanceHotkey, () => Apply(PowerMode.Performance, true));
+            toggleHint = toggleKey;
+            aboutHotkeys = "Toggle:  " + Or(toggleKey, "off") + "\n" +
+                           "Best efficiency:  " + Or(efficiencyKey, "off") + "\n" +
+                           "Best performance:  " + Or(performanceKey, "off");
 
             // Native Win32 menu (not ContextMenuStrip): gets the Windows 11 look and follows the dark theme.
             var title = new MenuItem("Power mode") { Enabled = false };
-            miEfficiency  = new MenuItem(Label(PowerMode.Efficiency),  delegate { Apply(PowerMode.Efficiency, false); })  { RadioCheck = true };
-            miBalanced    = new MenuItem(Label(PowerMode.Balanced),    delegate { Apply(PowerMode.Balanced, false); })    { RadioCheck = true };
-            miPerformance = new MenuItem(Label(PowerMode.Performance), delegate { Apply(PowerMode.Performance, false); }) { RadioCheck = true };
-            var miToggle  = new MenuItem("Toggle efficiency / performance\t" + (hotkeyError == null ? settings.Hotkey : "(hotkey unavailable)"),
+            miEfficiency  = new MenuItem(WithShortcut(Label(PowerMode.Efficiency), efficiencyKey),   delegate { Apply(PowerMode.Efficiency, false); })  { RadioCheck = true };
+            miBalanced    = new MenuItem(Label(PowerMode.Balanced),                                  delegate { Apply(PowerMode.Balanced, false); })    { RadioCheck = true };
+            miPerformance = new MenuItem(WithShortcut(Label(PowerMode.Performance), performanceKey), delegate { Apply(PowerMode.Performance, false); }) { RadioCheck = true };
+            var miToggle  = new MenuItem(WithShortcut("Toggle efficiency / performance", toggleKey),
                                          delegate { Toggle(false); }) { DefaultItem = true }; // bold = left-click action
             miAutostart = new MenuItem("Start with Windows", delegate
             {
@@ -639,7 +678,7 @@ namespace PowerModeToggle
             {
                 try { System.Diagnostics.Process.Start("notepad.exe", "\"" + Settings.FilePath + "\""); } catch { }
             });
-            var miAbout = new MenuItem("About Power Mode Toggle", delegate { ShowAbout(hotkeyError == null); });
+            var miAbout = new MenuItem("About Power Mode Toggle", delegate { ShowAbout(); });
             var miExit = new MenuItem("Exit", delegate { ExitThread(); });
 
             var menu = new ContextMenu(new[] {
@@ -662,9 +701,15 @@ namespace PowerModeToggle
             poll.Start();
             Refresh();
 
-            if (hotkeyError != null)
-                Notify("Hotkey unavailable", hotkeyError + " Edit the settings file to choose another.", ToolTipIcon.Warning);
+            if (hotkeyErrors.Count > 0)
+                Notify(hotkeyErrors.Count == 1 ? "Hotkey unavailable" : "Hotkeys unavailable",
+                       string.Join(" ", hotkeyErrors) + " Edit the settings file to choose another.", ToolTipIcon.Warning);
         }
+
+        static string Or(string value, string fallback) { return string.IsNullOrEmpty(value) ? fallback : value; }
+
+        // Native menus show text after a tab right-aligned, like a shortcut.
+        static string WithShortcut(string text, string shortcut) { return string.IsNullOrEmpty(shortcut) ? text : text + "\t" + shortcut; }
 
         void Toggle(bool notify)
         {
@@ -686,11 +731,11 @@ namespace PowerModeToggle
 
         AboutForm about;
 
-        void ShowAbout(bool hotkeyRegistered)
+        void ShowAbout()
         {
             if (about == null)
             {
-                about = new AboutForm(settings.Hotkey + (hotkeyRegistered ? "" : " (unavailable)"));
+                about = new AboutForm(aboutHotkeys);
                 about.FormClosed += delegate { about = null; };
                 about.Show();
             }
@@ -706,7 +751,7 @@ namespace PowerModeToggle
             if (mode == current) return;
             current = mode;
             tray.Icon = icons[mode];
-            var tip = "Power mode: " + Label(mode) + "\nClick to toggle (" + settings.Hotkey + ")";
+            var tip = "Power mode: " + Label(mode) + "\nClick to toggle" + (string.IsNullOrEmpty(toggleHint) ? "" : " (" + toggleHint + ")");
             tray.Text = tip.Length > 63 ? tip.Substring(0, 63) : tip; // NotifyIcon limit
         }
 
@@ -721,7 +766,7 @@ namespace PowerModeToggle
             poll.Stop();
             tray.Visible = false;
             tray.Dispose();
-            hotkey.Dispose();
+            hotkeys.Dispose();
             base.ExitThreadCore();
         }
     }
