@@ -10,9 +10,9 @@ A small Windows tray utility that switches the Windows power mode between **Best
 
   | Hotkey | Action |
   |---|---|
-  | **Ctrl+Alt+T** | Toggle between Best efficiency and Best performance |
-  | **Ctrl+Alt+L** | Switch to Best efficiency |
-  | **Ctrl+Alt+P** | Switch to Best performance |
+  | **Ctrl+Alt+,** | Toggle between Best efficiency and Best performance |
+  | **Ctrl+Alt+/** | Switch to Best efficiency |
+  | **Ctrl+Alt+'** | Switch to Best performance |
 
   The hotkeys are shown in the tray menu and can be changed in the settings file.
 - **Right-click menu:**
@@ -48,18 +48,20 @@ Only one instance runs at a time; starting it again does nothing.
 `PowerModeToggle.ini` is created next to the exe on first start (a `settings.ini` from version 1.3.0 or earlier is renamed automatically). Restart the app after editing it.
 
 ```ini
-ToggleHotkey=Ctrl+Alt+T
-EfficiencyHotkey=Ctrl+Alt+L
-PerformanceHotkey=Ctrl+Alt+P
+ToggleHotkey=Ctrl+Alt+,
+EfficiencyHotkey=Ctrl+Alt+/
+PerformanceHotkey=Ctrl+Alt+'
 ShowNotifications=true
 ```
 
-- **ToggleHotkey, EfficiencyHotkey, PerformanceHotkey:** any combination of `Ctrl`, `Alt`, `Shift` and `Win` plus a key name, for example `Ctrl+Alt+P`, `Win+Shift+F9` or `Ctrl+Alt+1`. Key names follow the .NET `Keys` enumeration. Leave a hotkey empty to turn it off. If another program already uses a hotkey, the app shows a warning at startup and the menu marks it "(unavailable)".
+- **ToggleHotkey, EfficiencyHotkey, PerformanceHotkey:** any combination of `Ctrl`, `Alt`, `Shift` and `Win` plus a key name or a punctuation character, for example `Ctrl+Alt+P`, `Win+Shift+F9`, `Ctrl+Alt+1` or `Ctrl+Alt+/`. Key names follow the .NET `Keys` enumeration. Leave a hotkey empty to turn it off. If another program already uses a hotkey, the app shows a warning at startup and the menu marks it "(unavailable)".
 
-  Avoid **Ctrl+Alt+letter** combinations that type a character on your keyboard layout. Windows treats Ctrl+Alt like AltGr, so on a German or Czech layout a Ctrl+Alt+E hotkey would stop AltGr+E from typing €. The default hotkeys type nothing with AltGr on those layouts.
+  **Punctuation** (`,` `.` `/` `;` `'` `[` `]` `\` `-` `=` and `` ` ``) means the key at that position on a US keyboard. Windows binds hotkeys to keys, not characters, so on other layouts the key can type something else. On a German layout, for example, `/` is the **#** key and `'` is the **Ä** key.
+
+  Windows treats **Ctrl+Alt** like **AltGr**, so a Ctrl+Alt hotkey stops AltGr on the same key from typing its character while the app runs. For example, Ctrl+Alt+E would block € on German and Czech layouts, and the default Ctrl+Alt+' blocks § on the Czech (QWERTY) layout. Pick another key if that character matters to you.
 - **ShowNotifications:** `true` or `false`. Turns off the notification shown after a hotkey switch. Errors are always shown. You can also change this from the tray menu.
 
-Settings files from version 1.3.x and earlier had a single `Hotkey` for toggling. They're updated automatically: the old default `Ctrl+Alt+P` becomes the new Best performance hotkey and toggling moves to `Ctrl+Alt+T`. A customized `Hotkey` is kept as the toggle hotkey.
+Settings files from version 1.3.x and earlier had a single `Hotkey` for toggling. They're updated automatically to the three hotkeys; a customized `Hotkey` is kept as the toggle hotkey.
 
 ## What it changes on your system
 

@@ -17,7 +17,7 @@ using Microsoft.Win32;
 // Windows shows the FileDescription (AssemblyTitle) as the app name on notifications.
 [assembly: AssemblyTitle("Power Mode Toggle")]
 [assembly: AssemblyProduct("Power Mode Toggle")]
-[assembly: AssemblyVersion("1.4.0.0")]
+[assembly: AssemblyVersion("1.5.0.0")]
 
 namespace PowerModeToggle
 {
@@ -57,10 +57,10 @@ namespace PowerModeToggle
 
     class Settings
     {
-        // Ctrl+Alt+<letter> is AltGr on many layouts; these letters type nothing with AltGr on German/Czech layouts.
-        public string ToggleHotkey = "Ctrl+Alt+T";
-        public string EfficiencyHotkey = "Ctrl+Alt+L";
-        public string PerformanceHotkey = "Ctrl+Alt+P";
+        // Punctuation means the key at that position on a US keyboard (see HotkeyWindow.Punctuation).
+        public string ToggleHotkey = "Ctrl+Alt+,";
+        public string EfficiencyHotkey = "Ctrl+Alt+/";
+        public string PerformanceHotkey = "Ctrl+Alt+'";
         public bool ShowNotifications = true;
 
         const string OldDefaultHotkey = "Ctrl+Alt+P"; // the single "Hotkey" (toggle) setting before 1.4.0
@@ -114,7 +114,8 @@ namespace PowerModeToggle
                 File.WriteAllLines(FilePath, new[]
                 {
                     "; Power Mode Toggle settings. Restart the app after editing.",
-                    "; Hotkeys: any combination of Ctrl, Alt, Shift, Win plus a key name, e.g. Ctrl+Alt+P, Win+Shift+F9.",
+                    "; Hotkeys: any combination of Ctrl, Alt, Shift, Win plus a key name or punctuation, e.g. Ctrl+Alt+P, Win+Shift+F9, Ctrl+Alt+/.",
+                    "; Punctuation means the key at that position on a US keyboard.",
                     "; Leave a hotkey empty to turn it off.",
                     "ToggleHotkey=" + ToggleHotkey,
                     "EfficiencyHotkey=" + EfficiencyHotkey,
@@ -178,6 +179,15 @@ namespace PowerModeToggle
 
         readonly Dictionary<int, Action> actions = new Dictionary<int, Action>(); // by hotkey id
 
+        // Punctuation in hotkeys, as the key at that position on a US keyboard. Hotkeys are bound to keys,
+        // not characters, so on other layouts the key may type something else (e.g. '/' is # on German).
+        static readonly Dictionary<char, Keys> Punctuation = new Dictionary<char, Keys>
+        {
+            { ',', Keys.Oemcomma }, { '.', Keys.OemPeriod }, { '/', Keys.OemQuestion }, { ';', Keys.OemSemicolon },
+            { '\'', Keys.OemQuotes }, { '[', Keys.OemOpenBrackets }, { ']', Keys.OemCloseBrackets }, { '\\', Keys.OemPipe },
+            { '-', Keys.OemMinus }, { '=', Keys.Oemplus }, { '`', Keys.Oemtilde },
+        };
+
         public HotkeyWindow()
         {
             CreateHandle(new CreateParams { Parent = HWND_MESSAGE });
@@ -199,6 +209,7 @@ namespace PowerModeToggle
                     case "shift": mods |= MOD_SHIFT; break;
                     case "win": case "windows": mods |= MOD_WIN; break;
                     default:
+                        if (p.Length == 1 && Punctuation.TryGetValue(p[0], out key)) break;
                         if (p.Length == 1 && char.IsDigit(p[0])) p = "D" + p;
                         try { key = (Keys)Enum.Parse(typeof(Keys), p, true); }
                         catch { return "Unknown key \"" + part.Trim() + "\" in hotkey \"" + spec + "\"."; }
