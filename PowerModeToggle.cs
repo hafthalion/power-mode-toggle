@@ -17,7 +17,7 @@ using Microsoft.Win32;
 // Windows shows the FileDescription (AssemblyTitle) as the app name on notifications.
 [assembly: AssemblyTitle("Power Mode Toggle")]
 [assembly: AssemblyProduct("Power Mode Toggle")]
-[assembly: AssemblyVersion("1.5.2.0")]
+[assembly: AssemblyVersion("1.5.3.0")]
 
 namespace PowerModeToggle
 {
@@ -114,17 +114,41 @@ namespace PowerModeToggle
 
         const string OldDefaultHotkey = "Ctrl+Alt+P"; // the single "Hotkey" (toggle) setting before 1.4.0
 
-        // Settings live next to the executable (portable).
-        static string Dir { get { return Path.GetDirectoryName(Application.ExecutablePath); } }
+        // Settings live in the user profile (%APPDATA%\PowerModeToggle), so the exe can be anywhere.
+        static string Dir { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PowerModeToggle"); } }
         public static string FilePath { get { return Path.Combine(Dir, "PowerModeToggle.ini"); } }
-        static string OldFilePath { get { return Path.Combine(Dir, "settings.ini"); } } // name before 1.3.1
+
+        // Before 1.5.3 the settings were next to the exe, named settings.ini before 1.3.1.
+        static IEnumerable<string> OldFilePaths
+        {
+            get
+            {
+                var exeDir = Path.GetDirectoryName(Application.ExecutablePath);
+                yield return Path.Combine(exeDir, "PowerModeToggle.ini");
+                yield return Path.Combine(exeDir, "settings.ini");
+            }
+        }
+
+        // Moves settings from an older location; copies if the old folder isn't writable.
+        static void MoveOldFile()
+        {
+            if (File.Exists(FilePath)) return;
+            foreach (var old in OldFilePaths)
+            {
+                if (!File.Exists(old)) continue;
+                Directory.CreateDirectory(Dir);
+                try { File.Move(old, FilePath); }
+                catch { File.Copy(old, FilePath); }
+                return;
+            }
+        }
 
         public static Settings Load()
         {
             var s = new Settings();
             try
             {
-                if (!File.Exists(FilePath) && File.Exists(OldFilePath)) File.Move(OldFilePath, FilePath);
+                MoveOldFile();
                 if (!File.Exists(FilePath)) { s.Save(); return s; }
 
                 var seen = new HashSet<string>();
@@ -160,6 +184,7 @@ namespace PowerModeToggle
         {
             try
             {
+                Directory.CreateDirectory(Dir);
                 File.WriteAllLines(FilePath, new[]
                 {
                     "; Power Mode Toggle settings. Restart the app after editing.",

@@ -37,7 +37,7 @@ A small Windows tray utility that switches the Windows power mode between **Best
 
 ## Usage
 
-1. Put `PowerModeToggle.exe` in a folder you can write to (not `Program Files`), for example `C:\Users\<you>\Software\PowerModeToggle\`.
+1. Put `PowerModeToggle.exe` in any folder, for example `C:\Users\<you>\Software\PowerModeToggle\` or `C:\Program Files\PowerModeToggle\`.
 2. Run it. The icon appears in the notification area. If you don't see it, look under the **^** overflow arrow and drag it onto the taskbar.
 3. Right-click the icon → **Start with Windows** to launch it automatically.
 
@@ -45,7 +45,9 @@ Only one instance runs at a time; starting it again does nothing.
 
 ## Settings
 
-`PowerModeToggle.ini` is created next to the exe on first start (a `settings.ini` from version 1.3.0 or earlier is renamed automatically). Restart the app after editing it.
+`PowerModeToggle.ini` is created in `%APPDATA%\PowerModeToggle\` on first start. Open it from the tray menu with **Edit settings file...**; its full path is also shown in the About window. Restart the app after editing it.
+
+Before version 1.5.3 the settings file was next to the exe, and before 1.3.1 it was called `settings.ini`. An old file next to the exe is moved to the new location automatically.
 
 ```ini
 ToggleHotkey=Ctrl+Alt+,
@@ -67,7 +69,7 @@ Settings files from version 1.3.x and earlier had a single `Hotkey` for toggling
 
 | What | Where | Why |
 |---|---|---|
-| `PowerModeToggle.ini` | Next to the exe | Your settings |
+| `PowerModeToggle.ini` | `%APPDATA%\PowerModeToggle\` | Your settings |
 | Start menu shortcut **Power Mode Toggle** | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\` | Windows only shows notification pop-ups from desktop apps that have one. It's re-created on every start, so it follows the exe if you move it. |
 | Notification images | `%TEMP%\PowerModeToggle\` | Mode icons for notifications, re-created when missing |
 | `PowerModeToggle` value | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | Only when **Start with Windows** is on. Updated on every start, so it follows the exe if you move it. |
@@ -75,7 +77,7 @@ Settings files from version 1.3.x and earlier had a single `Hotkey` for toggling
 ### Uninstall
 
 1. In the tray menu, turn off **Start with Windows**, then click **Exit**.
-2. Delete the app folder, the Start menu shortcut **Power Mode Toggle** and `%TEMP%\PowerModeToggle\`.
+2. Delete the exe, the settings folder `%APPDATA%\PowerModeToggle\`, the Start menu shortcut **Power Mode Toggle** and `%TEMP%\PowerModeToggle\`.
 
 ## Building
 

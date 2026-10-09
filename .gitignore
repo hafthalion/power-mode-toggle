@@ -1,6 +1,6 @@
 # Build output
 PowerModeToggle.exe
 
-# Personal settings (created next to the exe on first run)
+# Settings files that versions before 1.5.3 created next to the exe
 PowerModeToggle.ini
 settings.ini
