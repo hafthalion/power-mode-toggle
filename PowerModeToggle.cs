@@ -17,7 +17,7 @@ using Microsoft.Win32;
 // Windows shows the FileDescription (AssemblyTitle) as the app name on notifications.
 [assembly: AssemblyTitle("Power Mode Toggle")]
 [assembly: AssemblyProduct("Power Mode Toggle")]
-[assembly: AssemblyVersion("1.5.1.0")]
+[assembly: AssemblyVersion("1.5.2.0")]
 
 namespace PowerModeToggle
 {
@@ -366,6 +366,7 @@ namespace PowerModeToggle
         const string Aumid = "PowerModeToggle";
         const string AppName = "Power Mode Toggle";
         static readonly string ImageDir = Path.Combine(Path.GetTempPath(), "PowerModeToggle");
+        static readonly HashSet<PowerMode> written = new HashSet<PowerMode>(); // images written this run
 
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
         static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
@@ -378,8 +379,10 @@ namespace PowerModeToggle
         static string Image(PowerMode mode)
         {
             var path = Path.Combine(ImageDir, mode.ToString().ToLowerInvariant() + ".png");
-            if (!File.Exists(path))
+            // Rewrite once per run, so images left by an older version with other icons get replaced.
+            if (!written.Contains(mode) || !File.Exists(path))
             {
+                written.Add(mode);
                 Directory.CreateDirectory(ImageDir);
                 // Windows shows the logo at a fixed size; transparent padding makes the icon look smaller.
                 const int Canvas = 128, IconSize = 88;
@@ -438,8 +441,8 @@ namespace PowerModeToggle
         }
     }
 
-    // Mode icons, drawn at runtime: tray icon and notification logo.
-    // (app.ico, the exe icon, is the Performance glyph on the Balanced blue.)
+    // Mode icons, drawn at runtime: tray icon and notification logo. All are the app's lightning
+    // bolt; the color shows the mode. (app.ico, the exe icon, is the Balanced one.)
     static class Icons
     {
         public static Icon Make(PowerMode mode)
@@ -447,56 +450,33 @@ namespace PowerModeToggle
             using (var bmp = Draw(mode, 32)) return Icon.FromHandle(bmp.GetHicon());
         }
 
+        static Color ColorOf(PowerMode mode)
+        {
+            switch (mode)
+            {
+                case PowerMode.Efficiency: return Color.FromArgb(46, 160, 67);   // green
+                case PowerMode.Balanced: return Color.FromArgb(0, 120, 212);     // blue
+                case PowerMode.Performance: return Color.FromArgb(232, 96, 28);  // orange
+                default: return Color.Gray;                                      // other power plan
+            }
+        }
+
         public static Bitmap Draw(PowerMode mode, int size)
         {
             const int S = 32; // shapes are designed on a 32x32 grid and scaled
             var bmp = new Bitmap(size, size);
             using (var g = Graphics.FromImage(bmp))
+            using (var circle = new SolidBrush(ColorOf(mode)))
+            using (var bolt = new GraphicsPath())
             {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.Clear(Color.Transparent);
                 g.ScaleTransform(size / (float)S, size / (float)S);
-
-                Color bg = mode == PowerMode.Efficiency ? Color.FromArgb(46, 160, 67)
-                         : mode == PowerMode.Performance ? Color.FromArgb(232, 96, 28)
-                         : mode == PowerMode.Balanced ? Color.FromArgb(0, 120, 212)
-                         : Color.Gray;
-                using (var b = new SolidBrush(bg)) g.FillEllipse(b, 0, 0, S - 1, S - 1);
-
-                using (var w = new SolidBrush(Color.White))
-                using (var path = new GraphicsPath())
-                {
-                    if (mode == PowerMode.Performance)
-                    {
-                        // Lightning bolt
-                        path.AddPolygon(new[] {
-                            new PointF(18, 3), new PointF(7, 18), new PointF(15, 18),
-                            new PointF(13, 29), new PointF(25, 13), new PointF(17, 13), new PointF(18, 3) });
-                        g.FillPath(w, path);
-                    }
-                    else if (mode == PowerMode.Efficiency)
-                    {
-                        // Leaf: two arcs meeting at the tips, plus a stem
-                        path.AddBezier(7, 25, 6, 12, 14, 6, 26, 6);
-                        path.AddBezier(26, 6, 26, 18, 20, 26, 7, 25);
-                        g.FillPath(w, path);
-                        using (var pen = new Pen(bg, 2f)) g.DrawLine(pen, 9, 23, 20, 12);
-                    }
-                    else if (mode == PowerMode.Balanced)
-                    {
-                        // Half-filled circle
-                        using (var pen = new Pen(Color.White, 3f)) g.DrawEllipse(pen, 7, 7, 18, 18);
-                        g.FillPie(w, 7, 7, 18, 18, 90, 180);
-                    }
-                    else
-                    {
-                        using (var f = new Font("Segoe UI", 16f, FontStyle.Bold, GraphicsUnit.Pixel))
-                        {
-                            var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                            g.DrawString("?", f, w, new RectangleF(0, 0, S, S), sf);
-                        }
-                    }
-                }
+                g.FillEllipse(circle, 0, 0, S - 1, S - 1);
+                bolt.AddPolygon(new[] {
+                    new PointF(18, 3), new PointF(7, 18), new PointF(15, 18),
+                    new PointF(13, 29), new PointF(25, 13), new PointF(17, 13), new PointF(18, 3) });
+                g.FillPath(Brushes.White, bolt);
             }
             return bmp;
         }

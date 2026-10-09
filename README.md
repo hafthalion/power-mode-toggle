@@ -4,7 +4,7 @@ A small Windows tray utility that switches the Windows power mode between **Best
 
 ## Features
 
-- **Tray icon** that shows the current mode: a green leaf for Best efficiency, an orange lightning bolt for Best performance, and a blue half-circle for Balanced. A gray question mark means a power plan other than Balanced is active.
+- **Tray icon** that shows the current mode: the app's lightning bolt in **green** for Best efficiency, **orange** for Best performance and **blue** for Balanced. A **gray** bolt means a power plan other than Balanced is active.
 - **Left-click** the icon to toggle between Best efficiency and Best performance. From Balanced, it switches to Best performance.
 - **Global hotkeys** that work from anywhere:
 
@@ -33,7 +33,7 @@ A small Windows tray utility that switches the Windows power mode between **Best
 
 - Windows 11, or Windows 10 version 1709 or later.
 - .NET Framework 4.x, which is included with Windows 10 and 11.
-- The **Balanced** power plan. Windows only applies power modes with that plan. If another plan (for example High performance or Power saver) is active, the tray icon shows a gray **?** and its tooltip names the plan and explains this; switching to a mode switches to the Balanced plan first.
+- The **Balanced** power plan. Windows only applies power modes with that plan. If another plan (for example High performance or Power saver) is active, the tray icon turns gray and its tooltip names the plan and explains this; switching to a mode switches to the Balanced plan first.
 
 ## Usage
 
