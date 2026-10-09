@@ -442,7 +442,7 @@ namespace PowerModeToggle
     }
 
     // Mode icons, drawn at runtime: tray icon and notification logo. All are the app's lightning
-    // bolt; the color shows the mode. (app.ico, the exe icon, is the Balanced one.)
+    // bolt; the color shows the mode. (build.ps1 writes app.ico, the exe icon, from the Balanced one.)
     static class Icons
     {
         public static Icon Make(PowerMode mode)

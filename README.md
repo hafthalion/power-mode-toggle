@@ -91,7 +91,7 @@ This produces `PowerModeToggle.exe` from:
 |---|---|
 | `PowerModeToggle.cs` | All source code |
 | `app.manifest` | Per-monitor DPI awareness, Windows 10/11 compatibility |
-| `app.ico` | Exe icon, also used for the Start menu shortcut and the notification header |
+| `app.ico` | Exe icon, also used for the Start menu shortcut and the notification header. `build.ps1` regenerates it from the app's Balanced tray icon on every build, so don't edit it by hand. |
 | `build.ps1` | Build script |
 
 That compiler only supports **C# 5**, so newer syntax such as `$"..."` strings, `?.` and `=>` members won't compile.
