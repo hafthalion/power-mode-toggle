@@ -35,11 +35,19 @@ A small Windows tray utility that switches the Windows power mode between **Best
 - .NET Framework 4.x, which is included with Windows 10 and 11.
 - The **Balanced** power plan. Windows only applies power modes with that plan. If another plan (for example High performance or Power saver) is active, the tray icon turns gray and its tooltip names the plan and explains this; switching to a mode switches to the Balanced plan first.
 
+## Install
+
+Download **`PowerModeToggle-Setup.exe`** from the latest release and run it. It installs Power Mode Toggle for your user account in `%LOCALAPPDATA%\Programs\Power Mode Toggle`, without administrator rights, and starts it. Leave **Start with Windows** checked to launch it automatically. Running a newer setup later updates the app and keeps your settings.
+
+To uninstall, use **Settings → Apps → Installed apps → Power Mode Toggle → Uninstall**. You can choose to keep or delete your settings.
+
+### Portable use
+
+You can also skip the installer: download `PowerModeToggle.exe`, put it in any folder and run it. Right-click the tray icon → **Start with Windows** to launch it automatically.
+
 ## Usage
 
-1. Put `PowerModeToggle.exe` in any folder, for example `C:\Users\<you>\Software\PowerModeToggle\` or `C:\Program Files\PowerModeToggle\`.
-2. Run it. The icon appears in the notification area. If you don't see it, look under the **^** overflow arrow and drag it onto the taskbar.
-3. Right-click the icon → **Start with Windows** to launch it automatically.
+The icon appears in the notification area. If you don't see it, look under the **^** overflow arrow and drag it onto the taskbar.
 
 Only one instance runs at a time; starting it again does nothing.
 
@@ -73,8 +81,10 @@ Settings files from version 1.3.x and earlier had a single `Hotkey` for toggling
 | Start menu shortcut **Power Mode Toggle** | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\` | Windows only shows notification pop-ups from desktop apps that have one. It's re-created on every start, so it follows the exe if you move it. |
 | Notification images | `%TEMP%\PowerModeToggle\` | Mode icons for notifications, re-created when missing |
 | `PowerModeToggle` value | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | Only when **Start with Windows** is on. Updated on every start, so it follows the exe if you move it. |
+| Installed app and `Uninstall.exe` | `%LOCALAPPDATA%\Programs\Power Mode Toggle\` | Only when installed with `PowerModeToggle-Setup.exe` |
+| **Power Mode Toggle** uninstall entry | `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\PowerModeToggle` | Only when installed with the setup; shows the app in Settings → Apps |
 
-### Uninstall
+### Uninstall (portable use)
 
 1. In the tray menu, turn off **Start with Windows**, then click **Exit**.
 2. Delete the exe, the settings folder `%APPDATA%\PowerModeToggle\`, the Start menu shortcut **Power Mode Toggle** and `%TEMP%\PowerModeToggle\`.
@@ -87,11 +97,12 @@ The app builds with the C# compiler that ships with Windows, so no SDK is needed
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-This produces `PowerModeToggle.exe` from:
+This produces `PowerModeToggle.exe` and the installer `PowerModeToggle-Setup.exe` from:
 
 | File | Purpose |
 |---|---|
-| `PowerModeToggle.cs` | All source code |
+| `PowerModeToggle.cs` | The app |
+| `Setup.cs` | The installer and uninstaller. It is built together with `PowerModeToggle.cs` (shared version, icons and dialog style) and embeds the app. |
 | `app.manifest` | Per-monitor DPI awareness, Windows 10/11 compatibility |
 | `app.ico` | Exe icon, also used for the Start menu shortcut and the notification header. `build.ps1` regenerates it from the app's Balanced tray icon on every build, so don't edit it by hand. |
 | `build.ps1` | Build script |

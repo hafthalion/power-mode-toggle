@@ -52,4 +52,13 @@ try {
         PowerModeToggle.cs
     if ($LASTEXITCODE -ne 0) { throw "Build failed" }
     Write-Host "Built $(Join-Path $PSScriptRoot 'PowerModeToggle.exe')"
+
+    # Installer: shares PowerModeToggle.cs (dialog style, version) and embeds the app built above.
+    & $csc /nologo /target:winexe /optimize+ /platform:anycpu /define:SETUP /main:PowerModeToggle.SetupProgram `
+        /win32manifest:app.manifest /win32icon:app.ico `
+        /resource:PowerModeToggle.exe,PowerModeToggle.exe `
+        /out:PowerModeToggle-Setup.exe $references `
+        PowerModeToggle.cs Setup.cs
+    if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+    Write-Host "Built $(Join-Path $PSScriptRoot 'PowerModeToggle-Setup.exe')"
 } finally { Pop-Location }

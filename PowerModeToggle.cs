@@ -15,9 +15,14 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 // Windows shows the FileDescription (AssemblyTitle) as the app name on notifications.
+// The installer (Setup.cs, built with /define:SETUP) shares this file and its version.
+#if SETUP
+[assembly: AssemblyTitle("Power Mode Toggle Setup")]
+#else
 [assembly: AssemblyTitle("Power Mode Toggle")]
+#endif
 [assembly: AssemblyProduct("Power Mode Toggle")]
-[assembly: AssemblyVersion("1.5.3.0")]
+[assembly: AssemblyVersion("1.6.0.0")]
 
 namespace PowerModeToggle
 {
@@ -550,10 +555,10 @@ namespace PowerModeToggle
     }
 
     // About window in the Windows 11 style; follows the light/dark app mode.
-    class AboutForm : Form
+    // Small dialog in the Windows 11 style that follows the light/dark app mode: app icon on the
+    // left, content in Info, buttons bottom right. Used by the About window and the installer.
+    class ThemedForm : Form
     {
-        const string RepoUrl = "https://github.com/hafthalion/power-mode-toggle";
-
         [DllImport("dwmapi.dll")]
         static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
         const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20, DWMWA_USE_IMMERSIVE_DARK_MODE_OLD = 19; // 19 before Windows 10 20H1
@@ -568,20 +573,24 @@ namespace PowerModeToggle
         [DllImport("user32.dll")]
         static extern bool DestroyIcon(IntPtr icon);
 
-        readonly bool dark = Theme.AppsAreDark;
+        protected readonly bool dark = Theme.AppsAreDark;
+        readonly float scale;
+        protected readonly Color TextColor, DimColor, LinkColor;
+        protected readonly Font TitleFont = new Font("Segoe UI Semibold", 14f);
+        protected readonly FlowLayoutPanel Info, Buttons;
 
-        public AboutForm(string hotkeys) // one "name:  key" per line
+        protected int S(int v) { return (int)Math.Round(v * scale); } // 96-DPI pixels to device pixels
+
+        protected ThemedForm(string title)
         {
-            float k;
-            using (var g = CreateGraphics()) k = g.DpiX / 96f;
-            Func<int, int> S = v => (int)Math.Round(v * k);
+            using (var g = CreateGraphics()) scale = g.DpiX / 96f;
 
             Color back = dark ? Color.FromArgb(32, 32, 32) : Color.White;
-            Color text = dark ? Color.White : Color.Black;
-            Color dim  = dark ? Color.FromArgb(170, 170, 170) : Color.FromArgb(96, 96, 96);
-            Color link = dark ? Color.FromArgb(96, 205, 255) : Color.FromArgb(0, 95, 184);
+            TextColor = dark ? Color.White : Color.Black;
+            DimColor  = dark ? Color.FromArgb(170, 170, 170) : Color.FromArgb(96, 96, 96);
+            LinkColor = dark ? Color.FromArgb(96, 205, 255) : Color.FromArgb(0, 95, 184);
 
-            Text = "About Power Mode Toggle";
+            Text = title;
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             ShowIcon = false;
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -590,7 +599,7 @@ namespace PowerModeToggle
             AutoSize = true;
             AutoSizeMode = AutoSizeMode.GrowAndShrink;
             BackColor = back;
-            ForeColor = text;
+            ForeColor = TextColor;
             Font = new Font("Segoe UI", 9f);
             Padding = new Padding(S(24), S(20), S(24), S(16));
 
@@ -600,46 +609,112 @@ namespace PowerModeToggle
             if (logo != null)
                 layout.Controls.Add(new PictureBox { Image = logo, SizeMode = PictureBoxSizeMode.AutoSize, Margin = new Padding(0, S(4), S(16), 0) }, 0, 0);
 
-            var info = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = Padding.Empty };
-            Func<string, Font, Color, int, Label> line = (s, font, color, gapBelow) => new Label
-            {
-                Text = s, Font = font, ForeColor = color, AutoSize = true,
-                MaximumSize = new Size(S(380), 0), Margin = new Padding(0, 0, 0, gapBelow)
-            };
-            info.Controls.Add(line("Power Mode Toggle", new Font("Segoe UI Semibold", 14f), text, 0));
-            info.Controls.Add(line("Version " + Assembly.GetExecutingAssembly().GetName().Version.ToString(3), Font, dim, S(14)));
-            info.Controls.Add(line("Switches the Windows power mode between Best efficiency and Best performance.", Font, text, S(14)));
-            info.Controls.Add(line("Hotkeys:", Font, text, 0));
-            info.Controls.Add(line(hotkeys, Font, dim, S(10)));
-            info.Controls.Add(line("Settings file:", Font, text, 0));
-            info.Controls.Add(line(Settings.FilePath, Font, dim, S(14)));
-            var repo = new LinkLabel
-            {
-                Text = RepoUrl.Replace("https://", ""), AutoSize = true, Margin = Padding.Empty,
-                LinkColor = link, ActiveLinkColor = link, VisitedLinkColor = link, LinkBehavior = LinkBehavior.HoverUnderline
-            };
-            repo.LinkClicked += delegate { try { System.Diagnostics.Process.Start(RepoUrl); } catch { } };
-            info.Controls.Add(repo);
-            layout.Controls.Add(info, 1, 0);
+            Info = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = Padding.Empty };
+            layout.Controls.Add(Info, 1, 0);
 
-            var ok = new Button { Text = "OK", MinimumSize = new Size(S(96), S(32)), AutoSize = true, Anchor = AnchorStyles.Right, Margin = new Padding(0, S(20), 0, 0) };
-            if (dark)
-            {
-                ok.FlatStyle = FlatStyle.Flat;
-                ok.BackColor = Color.FromArgb(55, 55, 55);
-                ok.FlatAppearance.BorderColor = Color.FromArgb(85, 85, 85);
-                ok.FlatAppearance.MouseOverBackColor = Color.FromArgb(65, 65, 65);
-                ok.FlatAppearance.MouseDownBackColor = Color.FromArgb(45, 45, 45);
-            }
-            else ok.FlatStyle = FlatStyle.System;
-            ok.Click += delegate { Close(); };
-            layout.Controls.Add(ok, 0, 1);
-            layout.SetColumnSpan(ok, 2);
+            Buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Anchor = AnchorStyles.Right, Margin = new Padding(0, S(20), 0, 0) };
+            layout.Controls.Add(Buttons, 0, 1);
+            layout.SetColumnSpan(Buttons, 2);
 
             // AutoSize adds Padding only right/bottom of the content, so offset it by the left/top padding.
             layout.Location = new Point(Padding.Left, Padding.Top);
             Controls.Add(layout);
-            AcceptButton = CancelButton = ok;
+        }
+
+        protected Label Line(string text, Font font, Color color, int gapBelow)
+        {
+            return new Label
+            {
+                Text = text, Font = font, ForeColor = color, AutoSize = true,
+                MaximumSize = new Size(S(440), 0), Margin = new Padding(0, 0, 0, gapBelow)
+            };
+        }
+
+        protected LinkLabel Link(string url)
+        {
+            var link = new LinkLabel
+            {
+                Text = url.Replace("https://", ""), AutoSize = true, Margin = Padding.Empty,
+                LinkColor = LinkColor, ActiveLinkColor = LinkColor, VisitedLinkColor = LinkColor, LinkBehavior = LinkBehavior.HoverUnderline
+            };
+            link.LinkClicked += delegate { try { System.Diagnostics.Process.Start(url); } catch { } };
+            return link;
+        }
+
+        // Adds a button to the bottom-right row, in order from left to right.
+        protected Button AddButton(string text, EventHandler click)
+        {
+            var b = new Button { Text = text, MinimumSize = new Size(S(96), S(32)), AutoSize = true, Margin = new Padding(S(8), 0, 0, 0) };
+            if (Buttons.Controls.Count == 0) b.Margin = Padding.Empty;
+            if (dark)
+            {
+                b.FlatStyle = FlatStyle.Flat;
+                b.BackColor = Color.FromArgb(55, 55, 55);
+                b.FlatAppearance.BorderColor = Color.FromArgb(85, 85, 85);
+                b.FlatAppearance.MouseOverBackColor = Color.FromArgb(65, 65, 65);
+                b.FlatAppearance.MouseDownBackColor = Color.FromArgb(45, 45, 45);
+            }
+            else b.FlatStyle = FlatStyle.System;
+            b.Click += click;
+            Buttons.Controls.Add(b);
+            return b;
+        }
+
+        protected CheckBox MakeCheckBox(string text, bool isChecked)
+        {
+            // WinForms' flat checkbox draws a gray box on dark backgrounds, so dark mode draws its own.
+            var c = dark ? new DarkCheckBox(LinkColor) : new CheckBox();
+            c.Text = text;
+            c.Checked = isChecked;
+            c.AutoSize = true;
+            c.Margin = Padding.Empty;
+            return c;
+        }
+
+        // Windows 11 dark-mode checkbox: rounded gray outline, accent fill with a dark check when checked.
+        class DarkCheckBox : CheckBox
+        {
+            readonly Color accent;
+            public DarkCheckBox(Color accent) { this.accent = accent; SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true); }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                var g = e.Graphics;
+                g.Clear(Parent != null ? Parent.BackColor : BackColor);
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                float k = g.DpiX / 96f, box = 16 * k;
+                var r = new RectangleF(0.5f * k, (Height - box) / 2, box, box);
+                using (var path = Rounded(r, 3.5f * k))
+                {
+                    if (Checked) using (var b = new SolidBrush(accent)) g.FillPath(b, path);
+                    else using (var p = new Pen(Color.FromArgb(160, 160, 160), 1f * k)) g.DrawPath(p, path);
+                }
+                if (Checked)
+                    using (var p = new Pen(Color.Black, 1.6f * k) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
+                        g.DrawLines(p, new[] { new PointF(r.Left + 4 * k, r.Top + 8.5f * k), new PointF(r.Left + 7 * k, r.Top + 11.5f * k), new PointF(r.Left + 12 * k, r.Top + 5 * k) });
+                var text = new Rectangle((int)(r.Right + 8 * k), 0, Width - (int)(r.Right + 8 * k), Height);
+                TextRenderer.DrawText(g, Text, Font, text, ForeColor, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPrefix);
+                if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(g, new Rectangle(text.Left - 2, 1, Math.Min(text.Width, TextRenderer.MeasureText(Text, Font).Width + 4), Height - 2), ForeColor, Parent.BackColor);
+            }
+
+            public override Size GetPreferredSize(Size proposed)
+            {
+                float k; using (var g = CreateGraphics()) k = g.DpiX / 96f;
+                var t = TextRenderer.MeasureText(Text, Font);
+                return new Size((int)(16 * k + 8 * k) + t.Width + 2, Math.Max(t.Height, (int)(16 * k)) + (int)(4 * k));
+            }
+
+            static GraphicsPath Rounded(RectangleF r, float radius)
+            {
+                float d = radius * 2;
+                var p = new GraphicsPath();
+                p.AddArc(r.Left, r.Top, d, d, 180, 90);
+                p.AddArc(r.Right - d, r.Top, d, d, 270, 90);
+                p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+                p.AddArc(r.Left, r.Bottom - d, d, d, 90, 90);
+                p.CloseFigure();
+                return p;
+            }
         }
 
         protected override void OnLoad(EventArgs e)
@@ -676,6 +751,25 @@ namespace PowerModeToggle
                 return null;
             try { using (var icon = Icon.FromHandle(handles[0])) return icon.ToBitmap(); }
             finally { DestroyIcon(handles[0]); }
+        }
+    }
+
+    class AboutForm : ThemedForm
+    {
+        public const string RepoUrl = "https://github.com/hafthalion/power-mode-toggle";
+
+        public AboutForm(string hotkeys) // one "name:  key" per line
+            : base("About Power Mode Toggle")
+        {
+            Info.Controls.Add(Line("Power Mode Toggle", TitleFont, TextColor, 0));
+            Info.Controls.Add(Line("Version " + Assembly.GetExecutingAssembly().GetName().Version.ToString(3), Font, DimColor, S(14)));
+            Info.Controls.Add(Line("Switches the Windows power mode between Best efficiency and Best performance.", Font, TextColor, S(14)));
+            Info.Controls.Add(Line("Hotkeys:", Font, TextColor, 0));
+            Info.Controls.Add(Line(hotkeys, Font, DimColor, S(10)));
+            Info.Controls.Add(Line("Settings file:", Font, TextColor, 0));
+            Info.Controls.Add(Line(Settings.FilePath, Font, DimColor, S(14)));
+            Info.Controls.Add(Link(RepoUrl));
+            AcceptButton = CancelButton = AddButton("OK", delegate { Close(); });
         }
     }
 
