@@ -117,12 +117,12 @@ Releases are built by GitHub Actions ([`.github/workflows/release.yml`](.github/
 2. Tag that commit with the same version and push the tag:
 
    ```powershell
-   git tag -a v1.7.0 -m "Power Mode Toggle 1.7.0" -m "## Changed
+   git tag -a v1.7.0 --cleanup=whitespace -m "Power Mode Toggle 1.7.0" -m "## Changed
    - What changed, in Markdown"
    git push origin v1.7.0
    ```
 
-   The first line of the tag message is ignored; the rest becomes the top of the release notes. A tag without a message (`git tag v1.7.0`) also works and leaves a placeholder in the notes.
+   The first line of the tag message is ignored; the rest becomes the top of the release notes. Keep `--cleanup=whitespace`: without it, git drops lines that start with `#`, such as Markdown headings. A tag without a message (`git tag v1.7.0`) also works and leaves a placeholder in the notes.
 3. The workflow checks that the tag matches `AssemblyVersion`, builds `PowerModeToggle.exe` and `PowerModeToggle-Setup.exe`, and creates a **draft** release **Power Mode Toggle 1.7.0** with both exes, `SHA256SUMS.txt`, and notes that end with the download section and a SHA-256 table.
 4. Open the draft under **Releases**, review or edit the notes, and click **Publish release**.
 
