@@ -109,6 +109,25 @@ This produces `PowerModeToggle.exe` and the installer `PowerModeToggle-Setup.exe
 
 That compiler only supports **C# 5**, so newer syntax such as `$"..."` strings, `?.` and `=>` members won't compile.
 
+## Releasing
+
+Releases are built by GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)) on a Windows runner with the same `build.ps1`:
+
+1. Bump the version in `[assembly: AssemblyVersion("x.y.z.0")]` at the top of `PowerModeToggle.cs` (the installer shares it) and commit.
+2. Tag that commit with the same version and push the tag:
+
+   ```powershell
+   git tag -a v1.7.0 -m "Power Mode Toggle 1.7.0" -m "## Changed
+   - What changed, in Markdown"
+   git push origin v1.7.0
+   ```
+
+   The first line of the tag message is ignored; the rest becomes the top of the release notes. A tag without a message (`git tag v1.7.0`) also works and leaves a placeholder in the notes.
+3. The workflow checks that the tag matches `AssemblyVersion`, builds `PowerModeToggle.exe` and `PowerModeToggle-Setup.exe`, and creates a **draft** release **Power Mode Toggle 1.7.0** with both exes, `SHA256SUMS.txt`, and notes that end with the download section and a SHA-256 table.
+4. Open the draft under **Releases**, review or edit the notes, and click **Publish release**.
+
+If the tag doesn't match the version, the workflow fails without creating a release: delete the tag (`git push origin :refs/tags/v1.7.0` and `git tag -d v1.7.0`), fix the version and tag again. If a release for the tag already exists, re-running the workflow replaces its files but leaves its notes alone, so update the checksum table from the workflow log.
+
 ## Notes
 
 - **Undocumented power functions:** the app reads and sets the power mode with `PowerGetEffectiveOverlayScheme` and `PowerSetActiveOverlayScheme` from `powrprof.dll`. They change the same setting as the Power mode option in Settings, but Microsoft doesn't document them, so a future Windows update could change how they behave.
