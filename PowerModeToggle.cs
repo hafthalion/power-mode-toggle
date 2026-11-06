@@ -809,17 +809,17 @@ namespace PowerModeToggle
             };
         }
 
-        // Downloads the release's PowerModeToggle-Setup.exe, checks it against the release's SHA256SUMS.txt
+        // Downloads the release's PowerModeToggle-Setup-x.y.z.exe (PowerModeToggle-Setup.exe up to 1.6.4), checks it against the release's SHA256SUMS.txt
         // and returns its path in %TEMP%\PowerModeToggle. Blocking; throws if anything doesn't match.
         public static string DownloadSetup(Version version)
         {
-            const string SetupName = "PowerModeToggle-Setup.exe";
             var baseUrl = AboutForm.RepoUrl + "/releases/download/v" + version + "/";
             var sums = System.Text.Encoding.ASCII.GetString(Download(baseUrl + "SHA256SUMS.txt", 15000));
-            var line = Regex.Match(sums, "^([0-9a-fA-F]{64}) [ *]" + Regex.Escape(SetupName) + "\\s*$", RegexOptions.Multiline);
-            if (!line.Success) throw new InvalidDataException("The release has no checksum for " + SetupName + ".");
+            var line = Regex.Match(sums, "^([0-9a-fA-F]{64}) [ *](PowerModeToggle-Setup(?:-[0-9.]+)?\\.exe)\\s*$", RegexOptions.Multiline);
+            if (!line.Success) throw new InvalidDataException("The release has no checksum for its setup.");
+            var setupName = line.Groups[2].Value;
 
-            var setup = Download(baseUrl + SetupName, 120000);
+            var setup = Download(baseUrl + setupName, 120000);
             string hash;
             using (var sha = System.Security.Cryptography.SHA256.Create())
                 hash = BitConverter.ToString(sha.ComputeHash(setup)).Replace("-", "");

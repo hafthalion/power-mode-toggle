@@ -27,7 +27,7 @@ A small Windows tray utility that switches the Windows power mode between **Best
 
   The menu is the native Windows menu and follows your light or dark Windows mode.
 - **Notifications** when you switch with a hotkey, with the icon of the new mode.
-- **Updates:** at startup and once a day, the app looks for a newer release on GitHub. When there is one, it downloads that release's `PowerModeToggle-Setup.exe`, checks it against the release's SHA-256 checksum, and starts it. Click **Update** in the setup to install the new version; it replaces the running app and keeps your settings. If you cancel, the tray menu offers **Install version x.y.z...** to start it again. **Check for updates** in the menu checks right away. If the download or the checksum check fails, the release page opens instead.
+- **Updates:** at startup and once a day, the app looks for a newer release on GitHub. When there is one, it downloads that release's setup, checks it against the release's SHA-256 checksum, and starts it. Click **Update** in the setup to install the new version; it replaces the running app and keeps your settings. If you cancel, the tray menu offers **Install version x.y.z...** to start it again. **Check for updates** in the menu checks right away. If the download or the checksum check fails, the release page opens instead.
 - Stays in sync if you change the mode in Windows Settings; the tray icon updates within about 2 seconds.
 - Portable: a single small exe with no installer and no admin rights.
 
@@ -39,7 +39,7 @@ A small Windows tray utility that switches the Windows power mode between **Best
 
 ## Install
 
-Download **`PowerModeToggle-Setup.exe`** from the latest release and run it. It installs Power Mode Toggle for your user account in `%LOCALAPPDATA%\Programs\Power Mode Toggle`, without administrator rights, and starts it. Leave **Start with Windows** checked to launch it automatically. Running a newer setup later updates the app and keeps your settings.
+Download **`PowerModeToggle-Setup-x.y.z.exe`** from the latest release and run it. It installs Power Mode Toggle for your user account in `%LOCALAPPDATA%\Programs\Power Mode Toggle`, without administrator rights, and starts it. Leave **Start with Windows** checked to launch it automatically. Running a newer setup later updates the app and keeps your settings.
 
 To uninstall, use **Settings → Apps → Installed apps → Power Mode Toggle → Uninstall**. You can choose to keep or delete your settings.
 
@@ -86,7 +86,7 @@ Settings files from version 1.3.x and earlier had a single `Hotkey` for toggling
 | Notification images | `%TEMP%\PowerModeToggle\` | Mode icons for notifications, re-created when missing |
 | Downloaded setup | `%TEMP%\PowerModeToggle\` | `PowerModeToggle-Setup-x.y.z.exe`, only when an update is found |
 | `PowerModeToggle` value | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | Only when **Start with Windows** is on. Updated on every start, so it follows the exe if you move it. |
-| Installed app and `Uninstall.exe` | `%LOCALAPPDATA%\Programs\Power Mode Toggle\` | Only when installed with `PowerModeToggle-Setup.exe` |
+| Installed app and `Uninstall.exe` | `%LOCALAPPDATA%\Programs\Power Mode Toggle\` | Only when installed with the setup |
 | **Power Mode Toggle** uninstall entry | `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\PowerModeToggle` | Only when installed with the setup; shows the app in Settings → Apps |
 
 ### Uninstall (portable use)
@@ -128,7 +128,7 @@ Releases are built by GitHub Actions ([`.github/workflows/release.yml`](.github/
    ```
 
    The first line of the tag message is ignored; the rest becomes the top of the release notes. Keep `--cleanup=whitespace`: without it, git drops lines that start with `#`, such as Markdown headings. A tag without a message (`git tag v1.7.0`) also works and leaves a placeholder in the notes.
-3. The workflow checks that the tag matches `AssemblyVersion`, builds `PowerModeToggle.exe` and `PowerModeToggle-Setup.exe`, and creates a **draft** release **Power Mode Toggle 1.7.0** with both exes, `SHA256SUMS.txt`, and notes that end with the download section and a SHA-256 table.
+3. The workflow checks that the tag matches `AssemblyVersion`, builds `PowerModeToggle.exe` and `PowerModeToggle-Setup.exe`, renames the setup to `PowerModeToggle-Setup-1.7.0.exe`, and creates a **draft** release **Power Mode Toggle 1.7.0** with both exes, `SHA256SUMS.txt`, and notes that end with the download section and a SHA-256 table.
 4. Open the draft under **Releases**, review or edit the notes, and click **Publish release**.
 
 **Without pushing a tag:** after step 1, open **Actions → Release → Run workflow** on `main` and enter the version, the notes (Markdown), and whether to create a draft. The workflow creates the tag on the commit it built. If you leave **draft** unchecked, the release is published right away. It fails if the tag already exists.

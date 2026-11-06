@@ -1,4 +1,4 @@
-# Builds PowerModeToggle.exe and PowerModeToggle-Setup.exe and attaches them with their SHA-256
+# Builds PowerModeToggle.exe and PowerModeToggle-Setup-x.y.z.exe and attaches them with their SHA-256
 # checksums to a GitHub release. Runs when a version tag (v1.2.3) is pushed, which creates a draft,
 # or from the Actions tab ("Run workflow"), which creates the tag on the chosen branch itself.
 # See "Releasing" in README.md.
@@ -59,12 +59,15 @@ jobs:
       # Windows PowerShell, as in the README's build command.
       - name: Build
         shell: powershell
-        run: ./build.ps1
+        run: |
+          ./build.ps1
+          # The release ships the setup with its version in the name.
+          Rename-Item PowerModeToggle-Setup.exe "PowerModeToggle-Setup-$env:VERSION.exe"
 
       - name: Checksums
         shell: pwsh
         run: |
-          $files = 'PowerModeToggle-Setup.exe', 'PowerModeToggle.exe'
+          $files = "PowerModeToggle-Setup-$env:VERSION.exe", 'PowerModeToggle.exe'
           $hashes = foreach ($f in $files) { [pscustomobject]@{ Name = $f; Hash = (Get-FileHash $f -Algorithm SHA256).Hash } }
           # sha256sum format, so `sha256sum -c SHA256SUMS.txt` works.
           $sums = ($hashes | ForEach-Object { "$($_.Hash.ToLower())  $($_.Name)" }) -join "`n"
@@ -80,7 +83,7 @@ jobs:
           NOTES: ${{ inputs.notes }}
           DRAFT: ${{ inputs.draft }}
         run: |
-          $assets = 'PowerModeToggle-Setup.exe', 'PowerModeToggle.exe', 'SHA256SUMS.txt'
+          $assets = "PowerModeToggle-Setup-$env:VERSION.exe", 'PowerModeToggle.exe', 'SHA256SUMS.txt'
           gh release view $env:TAG *> $null
           if ($LASTEXITCODE -eq 0) {
               # A release for this tag already exists (re-run or written by hand): only replace its files.
@@ -107,7 +110,7 @@ jobs:
           $($notes.Trim())
 
           ## Download
-          - **``PowerModeToggle-Setup.exe``** (recommended): run it to install or update.
+          - **``PowerModeToggle-Setup-$env:VERSION.exe``** (recommended): run it to install or update.
           - **``PowerModeToggle.exe``**: the app alone, for portable use without installing.
 
           $((Get-Content checksums.md -Raw).Trim())
