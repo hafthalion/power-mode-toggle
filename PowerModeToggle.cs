@@ -204,7 +204,7 @@ namespace PowerModeToggle
                     "EfficiencyHotkey=" + EfficiencyHotkey,
                     "PerformanceHotkey=" + PerformanceHotkey,
                     "ShowNotifications=" + (ShowNotifications ? "true" : "false"),
-                    "; CheckForUpdates: look for a new release on GitHub at startup and once a day.",
+                    "; CheckForUpdates: look for a new release on GitHub at startup and once a day, and start its setup.",
                     "CheckForUpdates=" + (CheckForUpdates ? "true" : "false"),
                 });
             }
@@ -772,15 +772,28 @@ namespace PowerModeToggle
 
         public static Version Current { get { return Normalize(Assembly.GetExecutingAssembly().GetName().Version); } }
 
-        // Blocking; call it off the UI thread. Throws on network or parse errors.
-        public static Release FetchLatest()
+        static HttpWebRequest Request(string url, int timeout)
         {
             // Built without a target framework attribute, .NET keeps its old TLS defaults; GitHub needs TLS 1.2.
             ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072;
-            var request = (HttpWebRequest)WebRequest.Create(LatestUrl);
+            var request = (HttpWebRequest)WebRequest.Create(url);
             request.UserAgent = "PowerModeToggle/" + Current; // GitHub rejects requests without one
+            request.Timeout = request.ReadWriteTimeout = timeout;
+            return request;
+        }
+
+        static byte[] Download(string url, int timeout)
+        {
+            using (var response = Request(url, timeout).GetResponse())
+            using (var stream = response.GetResponseStream())
+            using (var ms = new MemoryStream()) { stream.CopyTo(ms); return ms.ToArray(); }
+        }
+
+        // Blocking; call it off the UI thread. Throws on network or parse errors.
+        public static Release FetchLatest()
+        {
+            var request = Request(LatestUrl, 15000);
             request.Accept = "application/vnd.github+json";
-            request.Timeout = request.ReadWriteTimeout = 15000;
             string json;
             using (var response = request.GetResponse())
             using (var reader = new StreamReader(response.GetResponseStream()))
@@ -794,6 +807,30 @@ namespace PowerModeToggle
                 Version = Normalize(new Version(tag.Groups[1].Value)),
                 Url = url.Success ? url.Groups[1].Value : AboutForm.RepoUrl + "/releases/latest",
             };
+        }
+
+        // Downloads the release's PowerModeToggle-Setup.exe, checks it against the release's SHA256SUMS.txt
+        // and returns its path in %TEMP%\PowerModeToggle. Blocking; throws if anything doesn't match.
+        public static string DownloadSetup(Version version)
+        {
+            const string SetupName = "PowerModeToggle-Setup.exe";
+            var baseUrl = AboutForm.RepoUrl + "/releases/download/v" + version + "/";
+            var sums = System.Text.Encoding.ASCII.GetString(Download(baseUrl + "SHA256SUMS.txt", 15000));
+            var line = Regex.Match(sums, "^([0-9a-fA-F]{64}) [ *]" + Regex.Escape(SetupName) + "\\s*$", RegexOptions.Multiline);
+            if (!line.Success) throw new InvalidDataException("The release has no checksum for " + SetupName + ".");
+
+            var setup = Download(baseUrl + SetupName, 120000);
+            string hash;
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+                hash = BitConverter.ToString(sha.ComputeHash(setup)).Replace("-", "");
+            if (!hash.Equals(line.Groups[1].Value, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("The downloaded setup doesn't match its checksum.");
+
+            var dir = Path.Combine(Path.GetTempPath(), "PowerModeToggle");
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, "PowerModeToggle-Setup-" + version + ".exe");
+            File.WriteAllBytes(path, setup);
+            return path;
         }
     }
 
@@ -826,7 +863,7 @@ namespace PowerModeToggle
         readonly MenuItem miEfficiency, miBalanced, miPerformance, miAutostart, miNotify, miUpdate;
         readonly System.Windows.Forms.Timer updateTimer = new System.Windows.Forms.Timer { Interval = 10000 }; // first check soon after start
         Updates.Release newRelease; // set once a newer release is found
-        bool checking;
+        bool busy; // checking for or downloading an update
         readonly string toggleHint, aboutHotkeys; // hotkey texts for the tooltip and the About window
         PowerMode current = PowerMode.Unknown;
 
@@ -885,7 +922,7 @@ namespace PowerModeToggle
             });
             miUpdate = new MenuItem(CheckLabel, delegate
             {
-                if (newRelease != null) OpenUrl(newRelease.Url);
+                if (newRelease != null) InstallUpdate();
                 else CheckForUpdates(true);
             });
             var miAbout = new MenuItem("About Power Mode Toggle", delegate { ShowAbout(); });
@@ -916,7 +953,7 @@ namespace PowerModeToggle
                 };
                 updateTimer.Start();
             }
-            tray.BalloonTipClicked += delegate { if (newRelease != null) OpenUrl(newRelease.Url); };
+            tray.BalloonTipClicked += delegate { if (newRelease != null && !busy) InstallUpdate(); };
 
             poll.Tick += delegate { Refresh(); };
             poll.Start();
@@ -934,30 +971,62 @@ namespace PowerModeToggle
             try { System.Diagnostics.Process.Start(url); } catch { }
         }
 
-        // Runs the web request on a worker thread and handles the result on the UI thread.
-        // Automatic checks stay quiet unless there's a new version; a check from the menu always answers.
-        void CheckForUpdates(bool manual)
+        string InstallLabel { get { return "Install version " + newRelease.Version + "..."; } }
+
+        // Runs work on a worker thread and hands its result (or exception) to done on the UI thread.
+        void Background<T>(string menuText, Func<T> work, Action<T, Exception> done)
         {
-            if (checking) return;
-            checking = true;
-            miUpdate.Text = "Checking for updates...";
+            busy = true;
+            miUpdate.Text = menuText;
             miUpdate.Enabled = false;
             var ui = SynchronizationContext.Current;
             ThreadPool.QueueUserWorkItem(delegate
             {
-                Updates.Release latest = null;
+                T result = default(T);
                 Exception error = null;
-                try { latest = Updates.FetchLatest(); }
+                try { result = work(); }
                 catch (Exception ex) { error = ex; }
-                ui.Post(delegate { UpdateChecked(latest, error, manual); }, null);
+                ui.Post(delegate
+                {
+                    busy = false;
+                    miUpdate.Enabled = true;
+                    miUpdate.Text = newRelease != null ? InstallLabel : CheckLabel;
+                    done(result, error);
+                }, null);
+            });
+        }
+
+        // Automatic checks stay quiet unless there's a new version; a check from the menu always answers.
+        void CheckForUpdates(bool manual)
+        {
+            if (busy) return;
+            Background<Updates.Release>("Checking for updates...", Updates.FetchLatest, (latest, error) => UpdateChecked(latest, error, manual));
+        }
+
+        // Downloads the new version's setup, checks its SHA-256 and runs it. The setup shows its
+        // Update button, then stops this app and starts the new one.
+        void InstallUpdate()
+        {
+            if (busy || newRelease == null) return;
+            var release = newRelease;
+            Background<string>("Downloading version " + release.Version + "...", () => Updates.DownloadSetup(release.Version), (path, error) =>
+            {
+                try
+                {
+                    if (error != null) throw error;
+                    System.Diagnostics.Process.Start(path);
+                }
+                catch (Exception ex)
+                {
+                    Notify("Could not install version " + release.Version,
+                           ex.Message + " Opening the release page to download it yourself.", ToolTipIcon.Warning);
+                    OpenUrl(release.Url);
+                }
             });
         }
 
         void UpdateChecked(Updates.Release latest, Exception error, bool manual)
         {
-            checking = false;
-            miUpdate.Enabled = true;
-            miUpdate.Text = CheckLabel;
             if (error != null)
             {
                 if (manual) Notify("Could not check for updates", error.Message, ToolTipIcon.Warning);
@@ -970,10 +1039,13 @@ namespace PowerModeToggle
             }
             bool isNew = newRelease == null || newRelease.Version != latest.Version;
             newRelease = latest;
-            miUpdate.Text = "Download version " + latest.Version + "...";
+            miUpdate.Text = InstallLabel;
+            // Once per version per run, so cancelling the setup doesn't bring it back every day.
             if (manual || isNew)
-                Notify("Version " + latest.Version + " is available",
-                       "Download it from the tray menu: Download version " + latest.Version + "...", ToolTipIcon.Info);
+            {
+                Notify("Version " + latest.Version + " is available", "Downloading the setup...", ToolTipIcon.Info);
+                InstallUpdate();
+            }
         }
 
         static string Or(string value, string fallback) { return string.IsNullOrEmpty(value) ? fallback : value; }
