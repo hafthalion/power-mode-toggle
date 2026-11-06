@@ -24,7 +24,7 @@ using Microsoft.Win32;
 [assembly: AssemblyTitle("Power Mode Toggle")]
 #endif
 [assembly: AssemblyProduct("Power Mode Toggle")]
-[assembly: AssemblyVersion("1.6.7.0")]
+[assembly: AssemblyVersion("1.6.8.0")]
 
 namespace PowerModeToggle
 {
@@ -649,10 +649,12 @@ namespace PowerModeToggle
                 layout.Controls.Add(logoBox, 0, 0);
             }
 
-            Info = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = Padding.Empty };
+            // GrowAndShrink here and on the buttons: the default GrowOnly keeps them large when the
+            // dialog is dragged to a monitor with a smaller scale (see Rescale).
+            Info = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Margin = Padding.Empty };
             layout.Controls.Add(Info, 1, 0);
 
-            Buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Anchor = AnchorStyles.Right, Margin = new Padding(0, S(20), 0, 0) };
+            Buttons = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, Anchor = AnchorStyles.Right, Margin = new Padding(0, S(20), 0, 0) };
             layout.Controls.Add(Buttons, 0, 1);
             layout.SetColumnSpan(Buttons, 2);
 
@@ -684,7 +686,7 @@ namespace PowerModeToggle
         // Adds a button to the bottom-right row, in order from left to right.
         protected Button AddButton(string text, EventHandler click)
         {
-            var b = new Button { Text = text, MinimumSize = new Size(S(96), S(32)), AutoSize = true, Margin = new Padding(S(8), 0, 0, 0) };
+            var b = new Button { Text = text, MinimumSize = new Size(S(96), S(32)), AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Margin = new Padding(S(8), 0, 0, 0) };
             if (Buttons.Controls.Count == 0) b.Margin = Padding.Empty;
             if (dark)
             {
