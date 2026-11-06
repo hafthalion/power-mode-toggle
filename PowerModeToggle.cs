@@ -24,7 +24,7 @@ using Microsoft.Win32;
 [assembly: AssemblyTitle("Power Mode Toggle")]
 #endif
 [assembly: AssemblyProduct("Power Mode Toggle")]
-[assembly: AssemblyVersion("1.6.1.0")]
+[assembly: AssemblyVersion("1.6.2.0")]
 
 namespace PowerModeToggle
 {
