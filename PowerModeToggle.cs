@@ -8,8 +8,10 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
+using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
@@ -116,6 +118,7 @@ namespace PowerModeToggle
         public string EfficiencyHotkey = "Ctrl+Alt+/";
         public string PerformanceHotkey = "Ctrl+Alt+'";
         public bool ShowNotifications = true;
+        public bool CheckForUpdates = true;
 
         const string OldDefaultHotkey = "Ctrl+Alt+P"; // the single "Hotkey" (toggle) setting before 1.4.0
 
@@ -171,6 +174,7 @@ namespace PowerModeToggle
                     else if (key == "efficiencyhotkey") s.EfficiencyHotkey = val;
                     else if (key == "performancehotkey") s.PerformanceHotkey = val;
                     else if (key == "shownotifications") s.ShowNotifications = !(val == "0" || val.Equals("false", StringComparison.OrdinalIgnoreCase));
+                    else if (key == "checkforupdates") s.CheckForUpdates = !(val == "0" || val.Equals("false", StringComparison.OrdinalIgnoreCase));
                     else if (key == "hotkey") oldHotkey = val;
                 }
 
@@ -178,7 +182,7 @@ namespace PowerModeToggle
                 if (!seen.Contains("togglehotkey") && oldHotkey != null && !oldHotkey.Equals(OldDefaultHotkey, StringComparison.OrdinalIgnoreCase))
                     s.ToggleHotkey = oldHotkey;
                 // Rewrite files from older versions so they list every setting.
-                if (!(seen.Contains("togglehotkey") && seen.Contains("efficiencyhotkey") && seen.Contains("performancehotkey") && seen.Contains("shownotifications")))
+                if (!(seen.Contains("togglehotkey") && seen.Contains("efficiencyhotkey") && seen.Contains("performancehotkey") && seen.Contains("shownotifications") && seen.Contains("checkforupdates")))
                     s.Save();
             }
             catch { }
@@ -200,6 +204,8 @@ namespace PowerModeToggle
                     "EfficiencyHotkey=" + EfficiencyHotkey,
                     "PerformanceHotkey=" + PerformanceHotkey,
                     "ShowNotifications=" + (ShowNotifications ? "true" : "false"),
+                    "; CheckForUpdates: look for a new release on GitHub at startup and once a day.",
+                    "CheckForUpdates=" + (CheckForUpdates ? "true" : "false"),
                 });
             }
             catch { }
@@ -754,6 +760,43 @@ namespace PowerModeToggle
         }
     }
 
+    // Looks up the latest published release on GitHub (drafts and pre-releases are excluded by the API).
+    static class Updates
+    {
+        const string LatestUrl = "https://api.github.com/repos/hafthalion/power-mode-toggle/releases/latest";
+
+        public class Release { public Version Version; public string Url; }
+
+        // Major.minor.build only: AssemblyVersion has a 4th part, tags don't.
+        static Version Normalize(Version v) { return new Version(v.Major, v.Minor, Math.Max(0, v.Build)); }
+
+        public static Version Current { get { return Normalize(Assembly.GetExecutingAssembly().GetName().Version); } }
+
+        // Blocking; call it off the UI thread. Throws on network or parse errors.
+        public static Release FetchLatest()
+        {
+            // Built without a target framework attribute, .NET keeps its old TLS defaults; GitHub needs TLS 1.2.
+            ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072;
+            var request = (HttpWebRequest)WebRequest.Create(LatestUrl);
+            request.UserAgent = "PowerModeToggle/" + Current; // GitHub rejects requests without one
+            request.Accept = "application/vnd.github+json";
+            request.Timeout = request.ReadWriteTimeout = 15000;
+            string json;
+            using (var response = request.GetResponse())
+            using (var reader = new StreamReader(response.GetResponseStream()))
+                json = reader.ReadToEnd();
+
+            var tag = Regex.Match(json, "\"tag_name\"\\s*:\\s*\"v?([0-9]+(?:\\.[0-9]+){1,3})\"");
+            var url = Regex.Match(json, "\"html_url\"\\s*:\\s*\"(https://github\\.com/[^\"]+/releases/tag/[^\"]+)\"");
+            if (!tag.Success) throw new InvalidDataException("No version in the GitHub reply.");
+            return new Release
+            {
+                Version = Normalize(new Version(tag.Groups[1].Value)),
+                Url = url.Success ? url.Groups[1].Value : AboutForm.RepoUrl + "/releases/latest",
+            };
+        }
+    }
+
     class AboutForm : ThemedForm
     {
         public const string RepoUrl = "https://github.com/hafthalion/power-mode-toggle";
@@ -780,7 +823,10 @@ namespace PowerModeToggle
         readonly Dictionary<PowerMode, Icon> icons = new Dictionary<PowerMode, Icon>();
         readonly HotkeyWindow hotkeys = new HotkeyWindow();
         readonly System.Windows.Forms.Timer poll = new System.Windows.Forms.Timer { Interval = 2000 };
-        readonly MenuItem miEfficiency, miBalanced, miPerformance, miAutostart, miNotify;
+        readonly MenuItem miEfficiency, miBalanced, miPerformance, miAutostart, miNotify, miUpdate;
+        readonly System.Windows.Forms.Timer updateTimer = new System.Windows.Forms.Timer { Interval = 10000 }; // first check soon after start
+        Updates.Release newRelease; // set once a newer release is found
+        bool checking;
         readonly string toggleHint, aboutHotkeys; // hotkey texts for the tooltip and the About window
         PowerMode current = PowerMode.Unknown;
 
@@ -837,13 +883,18 @@ namespace PowerModeToggle
             {
                 try { System.Diagnostics.Process.Start("notepad.exe", "\"" + Settings.FilePath + "\""); } catch { }
             });
+            miUpdate = new MenuItem(CheckLabel, delegate
+            {
+                if (newRelease != null) OpenUrl(newRelease.Url);
+                else CheckForUpdates(true);
+            });
             var miAbout = new MenuItem("About Power Mode Toggle", delegate { ShowAbout(); });
             var miExit = new MenuItem("Exit", delegate { ExitThread(); });
 
             var menu = new ContextMenu(new[] {
                 title, miEfficiency, miBalanced, miPerformance, new MenuItem("-"),
                 miToggle, new MenuItem("-"),
-                miAutostart, miNotify, miSettings, new MenuItem("-"), miAbout, miExit });
+                miAutostart, miNotify, miSettings, new MenuItem("-"), miUpdate, miAbout, miExit });
             menu.Popup += delegate
             {
                 MenuTheme.Apply();
@@ -856,6 +907,17 @@ namespace PowerModeToggle
             tray.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) Toggle(false); };
             tray.Visible = true;
 
+            if (settings.CheckForUpdates)
+            {
+                updateTimer.Tick += delegate
+                {
+                    updateTimer.Interval = 24 * 60 * 60 * 1000; // then once a day
+                    CheckForUpdates(false);
+                };
+                updateTimer.Start();
+            }
+            tray.BalloonTipClicked += delegate { if (newRelease != null) OpenUrl(newRelease.Url); };
+
             poll.Tick += delegate { Refresh(); };
             poll.Start();
             Refresh();
@@ -863,6 +925,55 @@ namespace PowerModeToggle
             if (hotkeyErrors.Count > 0)
                 Notify(hotkeyErrors.Count == 1 ? "Hotkey unavailable" : "Hotkeys unavailable",
                        string.Join(" ", hotkeyErrors) + " Edit the settings file to choose another.", ToolTipIcon.Warning);
+        }
+
+        const string CheckLabel = "Check for updates";
+
+        static void OpenUrl(string url)
+        {
+            try { System.Diagnostics.Process.Start(url); } catch { }
+        }
+
+        // Runs the web request on a worker thread and handles the result on the UI thread.
+        // Automatic checks stay quiet unless there's a new version; a check from the menu always answers.
+        void CheckForUpdates(bool manual)
+        {
+            if (checking) return;
+            checking = true;
+            miUpdate.Text = "Checking for updates...";
+            miUpdate.Enabled = false;
+            var ui = SynchronizationContext.Current;
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                Updates.Release latest = null;
+                Exception error = null;
+                try { latest = Updates.FetchLatest(); }
+                catch (Exception ex) { error = ex; }
+                ui.Post(delegate { UpdateChecked(latest, error, manual); }, null);
+            });
+        }
+
+        void UpdateChecked(Updates.Release latest, Exception error, bool manual)
+        {
+            checking = false;
+            miUpdate.Enabled = true;
+            miUpdate.Text = CheckLabel;
+            if (error != null)
+            {
+                if (manual) Notify("Could not check for updates", error.Message, ToolTipIcon.Warning);
+                return;
+            }
+            if (latest.Version <= Updates.Current)
+            {
+                if (manual) Notify("No update available", "Version " + Updates.Current + " is the latest.", ToolTipIcon.Info);
+                return;
+            }
+            bool isNew = newRelease == null || newRelease.Version != latest.Version;
+            newRelease = latest;
+            miUpdate.Text = "Download version " + latest.Version + "...";
+            if (manual || isNew)
+                Notify("Version " + latest.Version + " is available",
+                       "Download it from the tray menu: Download version " + latest.Version + "...", ToolTipIcon.Info);
         }
 
         static string Or(string value, string fallback) { return string.IsNullOrEmpty(value) ? fallback : value; }
@@ -959,6 +1070,7 @@ namespace PowerModeToggle
         protected override void ExitThreadCore()
         {
             poll.Stop();
+            updateTimer.Stop();
             tray.Visible = false;
             tray.Dispose();
             hotkeys.Dispose();

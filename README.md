@@ -21,11 +21,13 @@ A small Windows tray utility that switches the Windows power mode between **Best
   - Start with Windows.
   - Show notifications.
   - Edit the settings file.
+  - Check for updates.
   - About (version, hotkeys, settings location).
   - Exit.
 
   The menu is the native Windows menu and follows your light or dark Windows mode.
 - **Notifications** when you switch with a hotkey, with the icon of the new mode.
+- **Update check:** at startup and once a day, the app looks for a newer release on GitHub. When there is one, it shows a notification and the tray menu offers **Download version x.y.z...**, which opens the release page. **Check for updates** in the menu checks right away. It only reads the latest release's version; nothing is downloaded or installed automatically.
 - Stays in sync if you change the mode in Windows Settings; the tray icon updates within about 2 seconds.
 - Portable: a single small exe with no installer and no admin rights.
 
@@ -62,6 +64,7 @@ ToggleHotkey=Ctrl+Alt+,
 EfficiencyHotkey=Ctrl+Alt+/
 PerformanceHotkey=Ctrl+Alt+'
 ShowNotifications=true
+CheckForUpdates=true
 ```
 
 - **ToggleHotkey, EfficiencyHotkey, PerformanceHotkey:** any combination of `Ctrl`, `Alt`, `Shift` and `Win` plus a key name or a punctuation character, for example `Ctrl+Alt+P`, `Win+Shift+F9`, `Ctrl+Alt+1` or `Ctrl+Alt+/`. Key names follow the .NET `Keys` enumeration. Leave a hotkey empty to turn it off. If another program already uses a hotkey, the app shows a warning at startup and the menu marks it "(unavailable)".
@@ -69,6 +72,7 @@ ShowNotifications=true
   **Punctuation** (`,` `.` `/` `;` `'` `[` `]` `\` `-` `=` and `` ` ``) means the key at that position on a US keyboard. Windows binds hotkeys to keys, not characters, so on other layouts the key can type something else. On a German layout, for example, `/` is the **#** key and `'` is the **Ä** key.
 
   Windows treats **Ctrl+Alt** like **AltGr**, so a Ctrl+Alt hotkey stops AltGr on the same key from typing its character while the app runs. For example, Ctrl+Alt+E would block € on German and Czech layouts, and the default Ctrl+Alt+' blocks § on the Czech (QWERTY) layout. Pick another key if that character matters to you.
+- **CheckForUpdates:** `true` or `false`. Turns off the automatic check for a new release at startup and once a day. **Check for updates** in the tray menu still works.
 - **ShowNotifications:** `true` or `false`. Turns off the notification shown after a hotkey switch. Errors are always shown. You can also change this from the tray menu.
 
 Settings files from version 1.3.x and earlier had a single `Hotkey` for toggling. They're updated automatically to the three hotkeys; a customized `Hotkey` is kept as the toggle hotkey.
@@ -134,4 +138,5 @@ If the tag doesn't match the version, the workflow fails without creating a rele
 - **Dark menu:** the tray menu is the native Windows menu. Windows still draws a program's native menus light unless the program opts into dark mode, and that opt-in uses two undocumented `uxtheme.dll` functions. They have been stable since Windows 10 1903; on older versions the menu stays light.
 - **Per power source:** Windows remembers the power mode separately for plugged-in and on-battery. The app changes the one for the current power source, just like Settings does.
 - **Manufacturer tools:** apps like Lenovo Vantage, ASUS Armoury Crate or Dell Power Manager can override the power mode.
+- **Network access:** the update check is the app's only network access. It sends one request to `api.github.com` for the latest release of this repository. Set `CheckForUpdates=false` to stop the automatic checks.
 - **Unsigned exe:** the exe isn't digitally signed. If you copy it to another PC through a download or email, Windows SmartScreen may warn you. Right-click the exe → **Properties** → tick **Unblock**.
