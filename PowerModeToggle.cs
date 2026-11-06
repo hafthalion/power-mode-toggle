@@ -24,7 +24,7 @@ using Microsoft.Win32;
 [assembly: AssemblyTitle("Power Mode Toggle")]
 #endif
 [assembly: AssemblyProduct("Power Mode Toggle")]
-[assembly: AssemblyVersion("1.6.5.0")]
+[assembly: AssemblyVersion("1.6.6.0")]
 
 namespace PowerModeToggle
 {
@@ -579,17 +579,43 @@ namespace PowerModeToggle
         [DllImport("user32.dll")]
         static extern bool DestroyIcon(IntPtr icon);
 
+        [DllImport("user32.dll")]
+        static extern IntPtr MonitorFromPoint(Point pt, uint flags);
+        [DllImport("shcore.dll")]
+        static extern int GetDpiForMonitor(IntPtr monitor, int type, out uint dpiX, out uint dpiY);
+        const uint MONITOR_DEFAULTTONEAREST = 2;
+        const int MDT_EFFECTIVE_DPI = 0, WM_DPICHANGED = 0x02E0;
+
         protected readonly bool dark = Theme.AppsAreDark;
         readonly float scale;
         protected readonly Color TextColor, DimColor, LinkColor;
-        protected readonly Font TitleFont = new Font("Segoe UI Semibold", 14f);
+        protected readonly Font TitleFont;
         protected readonly FlowLayoutPanel Info, Buttons;
 
         protected int S(int v) { return (int)Math.Round(v * scale); } // 96-DPI pixels to device pixels
 
+        // A font sized in pixels for the dialog's monitor. Point sizes would be converted with the
+        // primary monitor's DPI (the per-monitor aware process sees only that one), which is wrong
+        // on a second monitor with another scale.
+        Font PixelFont(string family, float points) { return new Font(family, points * 96f / 72f * scale, GraphicsUnit.Pixel); }
+
+        // Effective DPI of the monitor under the mouse, where OnLoad centers the dialog.
+        static float MonitorDpi()
+        {
+            try
+            {
+                uint x, y;
+                if (GetDpiForMonitor(MonitorFromPoint(Cursor.Position, MONITOR_DEFAULTTONEAREST), MDT_EFFECTIVE_DPI, out x, out y) == 0 && x > 0)
+                    return x;
+            }
+            catch (DllNotFoundException) { } catch (EntryPointNotFoundException) { } // before Windows 8.1
+            using (var g = Graphics.FromHwnd(IntPtr.Zero)) return g.DpiX;
+        }
+
         protected ThemedForm(string title)
         {
-            using (var g = CreateGraphics()) scale = g.DpiX / 96f;
+            scale = MonitorDpi() / 96f;
+            TitleFont = PixelFont("Segoe UI Semibold", 14f);
 
             Color back = dark ? Color.FromArgb(32, 32, 32) : Color.White;
             TextColor = dark ? Color.White : Color.Black;
@@ -606,7 +632,7 @@ namespace PowerModeToggle
             AutoSizeMode = AutoSizeMode.GrowAndShrink;
             BackColor = back;
             ForeColor = TextColor;
-            Font = new Font("Segoe UI", 9f);
+            Font = PixelFont("Segoe UI", 9f);
             Padding = new Padding(S(24), S(20), S(24), S(16));
 
             var layout = new TableLayoutPanel { ColumnCount = 2, RowCount = 2, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
@@ -669,7 +695,7 @@ namespace PowerModeToggle
         protected CheckBox MakeCheckBox(string text, bool isChecked)
         {
             // WinForms' flat checkbox draws a gray box on dark backgrounds, so dark mode draws its own.
-            var c = dark ? new DarkCheckBox(LinkColor) : new CheckBox();
+            var c = dark ? new DarkCheckBox(LinkColor, scale) : new CheckBox();
             c.Text = text;
             c.Checked = isChecked;
             c.AutoSize = true;
@@ -681,14 +707,15 @@ namespace PowerModeToggle
         class DarkCheckBox : CheckBox
         {
             readonly Color accent;
-            public DarkCheckBox(Color accent) { this.accent = accent; SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true); }
+            readonly float k; // the dialog's scale; Graphics.DpiX is always the primary monitor's
+            public DarkCheckBox(Color accent, float scale) { this.accent = accent; k = scale; SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true); }
 
             protected override void OnPaint(PaintEventArgs e)
             {
                 var g = e.Graphics;
                 g.Clear(Parent != null ? Parent.BackColor : BackColor);
                 g.SmoothingMode = SmoothingMode.AntiAlias;
-                float k = g.DpiX / 96f, box = 16 * k;
+                float box = 16 * k;
                 var r = new RectangleF(0.5f * k, (Height - box) / 2, box, box);
                 using (var path = Rounded(r, 3.5f * k))
                 {
@@ -705,7 +732,6 @@ namespace PowerModeToggle
 
             public override Size GetPreferredSize(Size proposed)
             {
-                float k; using (var g = CreateGraphics()) k = g.DpiX / 96f;
                 var t = TextRenderer.MeasureText(Text, Font);
                 return new Size((int)(16 * k + 8 * k) + t.Width + 2, Math.Max(t.Height, (int)(16 * k)) + (int)(4 * k));
             }
@@ -729,6 +755,14 @@ namespace PowerModeToggle
             var area = Screen.FromPoint(Cursor.Position).WorkingArea; // the screen with the tray icon that was clicked
             Location = new Point(area.Left + (area.Width - Width) / 2, area.Top + (area.Height - Height) / 2);
             base.OnLoad(e);
+        }
+
+        // The dialog is laid out for its monitor's DPI before it is moved there (see OnLoad), and it
+        // doesn't rescale when dragged to another monitor, so keep Windows from resizing it.
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_DPICHANGED) { m.Result = IntPtr.Zero; return; }
+            base.WndProc(ref m);
         }
 
         protected override void OnHandleCreated(EventArgs e)
