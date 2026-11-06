@@ -27,7 +27,7 @@ A small Windows tray utility that switches the Windows power mode between **Best
 
   The menu is the native Windows menu and follows your light or dark Windows mode.
 - **Notifications** when you switch with a hotkey, with the icon of the new mode.
-- **Update check:** at startup and once a day, the app looks for a newer release on GitHub. When there is one, it shows a notification and the tray menu offers **Download version x.y.z...**, which opens the release page. **Check for updates** in the menu checks right away. It only reads the latest release's version; nothing is downloaded or installed automatically.
+- **Updates:** at startup and once a day, the app looks for a newer release on GitHub. When there is one, it downloads that release's `PowerModeToggle-Setup.exe`, checks it against the release's SHA-256 checksum, and starts it. Click **Update** in the setup to install the new version; it replaces the running app and keeps your settings. If you cancel, the tray menu offers **Install version x.y.z...** to start it again. **Check for updates** in the menu checks right away. If the download or the checksum check fails, the release page opens instead.
 - Stays in sync if you change the mode in Windows Settings; the tray icon updates within about 2 seconds.
 - Portable: a single small exe with no installer and no admin rights.
 
@@ -72,7 +72,7 @@ CheckForUpdates=true
   **Punctuation** (`,` `.` `/` `;` `'` `[` `]` `\` `-` `=` and `` ` ``) means the key at that position on a US keyboard. Windows binds hotkeys to keys, not characters, so on other layouts the key can type something else. On a German layout, for example, `/` is the **#** key and `'` is the **Ä** key.
 
   Windows treats **Ctrl+Alt** like **AltGr**, so a Ctrl+Alt hotkey stops AltGr on the same key from typing its character while the app runs. For example, Ctrl+Alt+E would block € on German and Czech layouts, and the default Ctrl+Alt+' blocks § on the Czech (QWERTY) layout. Pick another key if that character matters to you.
-- **CheckForUpdates:** `true` or `false`. Turns off the automatic check for a new release at startup and once a day. **Check for updates** in the tray menu still works.
+- **CheckForUpdates:** `true` or `false`. Turns off the automatic check (and setup download) at startup and once a day. **Check for updates** in the tray menu still works.
 - **ShowNotifications:** `true` or `false`. Turns off the notification shown after a hotkey switch. Errors are always shown. You can also change this from the tray menu.
 
 Settings files from version 1.3.x and earlier had a single `Hotkey` for toggling. They're updated automatically to the three hotkeys; a customized `Hotkey` is kept as the toggle hotkey.
@@ -84,6 +84,7 @@ Settings files from version 1.3.x and earlier had a single `Hotkey` for toggling
 | `PowerModeToggle.ini` | `%APPDATA%\PowerModeToggle\` | Your settings |
 | Start menu shortcut **Power Mode Toggle** | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\` | Windows only shows notification pop-ups from desktop apps that have one. It's re-created on every start, so it follows the exe if you move it. |
 | Notification images | `%TEMP%\PowerModeToggle\` | Mode icons for notifications, re-created when missing |
+| Downloaded setup | `%TEMP%\PowerModeToggle\` | `PowerModeToggle-Setup-x.y.z.exe`, only when an update is found |
 | `PowerModeToggle` value | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | Only when **Start with Windows** is on. Updated on every start, so it follows the exe if you move it. |
 | Installed app and `Uninstall.exe` | `%LOCALAPPDATA%\Programs\Power Mode Toggle\` | Only when installed with `PowerModeToggle-Setup.exe` |
 | **Power Mode Toggle** uninstall entry | `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\PowerModeToggle` | Only when installed with the setup; shows the app in Settings → Apps |
@@ -140,5 +141,5 @@ If the tag doesn't match the version, the workflow fails without creating a rele
 - **Dark menu:** the tray menu is the native Windows menu. Windows still draws a program's native menus light unless the program opts into dark mode, and that opt-in uses two undocumented `uxtheme.dll` functions. They have been stable since Windows 10 1903; on older versions the menu stays light.
 - **Per power source:** Windows remembers the power mode separately for plugged-in and on-battery. The app changes the one for the current power source, just like Settings does.
 - **Manufacturer tools:** apps like Lenovo Vantage, ASUS Armoury Crate or Dell Power Manager can override the power mode.
-- **Network access:** the update check is the app's only network access. It sends one request to `api.github.com` for the latest release of this repository. Set `CheckForUpdates=false` to stop the automatic checks.
+- **Network access:** the update check is the app's only network access. It sends one request to `api.github.com` for the latest release of this repository and, when there's a newer one, downloads its setup and `SHA256SUMS.txt` from GitHub. Set `CheckForUpdates=false` to stop the automatic checks.
 - **Unsigned exe:** the exe isn't digitally signed. If you copy it to another PC through a download or email, Windows SmartScreen may warn you. Right-click the exe → **Properties** → tick **Unblock**.
