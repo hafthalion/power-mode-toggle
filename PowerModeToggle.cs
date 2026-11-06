@@ -24,7 +24,7 @@ using Microsoft.Win32;
 [assembly: AssemblyTitle("Power Mode Toggle")]
 #endif
 [assembly: AssemblyProduct("Power Mode Toggle")]
-[assembly: AssemblyVersion("1.6.6.0")]
+[assembly: AssemblyVersion("1.6.7.0")]
 
 namespace PowerModeToggle
 {
@@ -585,12 +585,17 @@ namespace PowerModeToggle
         static extern int GetDpiForMonitor(IntPtr monitor, int type, out uint dpiX, out uint dpiY);
         const uint MONITOR_DEFAULTTONEAREST = 2;
         const int MDT_EFFECTIVE_DPI = 0, WM_DPICHANGED = 0x02E0;
+        [StructLayout(LayoutKind.Sequential)]
+        struct RECT { public int Left, Top, Right, Bottom; }
 
         protected readonly bool dark = Theme.AppsAreDark;
-        readonly float scale;
+        float scale;           // current monitor DPI / 96
+        readonly float baseScale; // the scale the subclass laid the dialog out with
         protected readonly Color TextColor, DimColor, LinkColor;
-        protected readonly Font TitleFont;
+        protected Font TitleFont { get; private set; }
         protected readonly FlowLayoutPanel Info, Buttons;
+        readonly TableLayoutPanel layout;
+        readonly PictureBox logoBox;
 
         protected int S(int v) { return (int)Math.Round(v * scale); } // 96-DPI pixels to device pixels
 
@@ -614,7 +619,7 @@ namespace PowerModeToggle
 
         protected ThemedForm(string title)
         {
-            scale = MonitorDpi() / 96f;
+            scale = baseScale = MonitorDpi() / 96f;
             TitleFont = PixelFont("Segoe UI Semibold", 14f);
 
             Color back = dark ? Color.FromArgb(32, 32, 32) : Color.White;
@@ -635,11 +640,14 @@ namespace PowerModeToggle
             Font = PixelFont("Segoe UI", 9f);
             Padding = new Padding(S(24), S(20), S(24), S(16));
 
-            var layout = new TableLayoutPanel { ColumnCount = 2, RowCount = 2, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
+            layout = new TableLayoutPanel { ColumnCount = 2, RowCount = 2, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
 
             var logo = AppIcon(S(48));
             if (logo != null)
-                layout.Controls.Add(new PictureBox { Image = logo, SizeMode = PictureBoxSizeMode.AutoSize, Margin = new Padding(0, S(4), S(16), 0) }, 0, 0);
+            {
+                logoBox = new PictureBox { Image = logo, SizeMode = PictureBoxSizeMode.AutoSize, Margin = new Padding(0, S(4), S(16), 0) };
+                layout.Controls.Add(logoBox, 0, 0);
+            }
 
             Info = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = Padding.Empty };
             layout.Controls.Add(Info, 1, 0);
@@ -707,7 +715,7 @@ namespace PowerModeToggle
         class DarkCheckBox : CheckBox
         {
             readonly Color accent;
-            readonly float k; // the dialog's scale; Graphics.DpiX is always the primary monitor's
+            internal float k; // the dialog's scale; Graphics.DpiX is always the primary monitor's
             public DarkCheckBox(Color accent, float scale) { this.accent = accent; k = scale; SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true); }
 
             protected override void OnPaint(PaintEventArgs e)
@@ -757,12 +765,84 @@ namespace PowerModeToggle
             base.OnLoad(e);
         }
 
-        // The dialog is laid out for its monitor's DPI before it is moved there (see OnLoad), and it
-        // doesn't rescale when dragged to another monitor, so keep Windows from resizing it.
+        // Sent when the dialog moves to a monitor with another scale, including the move in OnLoad
+        // (already laid out for that monitor, so nothing to do then). WinForms on .NET Framework doesn't
+        // rescale by itself, so redo the fonts, spacing and icon for the new scale. The suggested
+        // rectangle isn't used for the size, since AutoSize sizes the dialog from its content.
         protected override void WndProc(ref Message m)
         {
-            if (m.Msg == WM_DPICHANGED) { m.Result = IntPtr.Zero; return; }
+            if (m.Msg == WM_DPICHANGED)
+            {
+                float newScale = (m.WParam.ToInt64() & 0xFFFF) / 96f;
+                if (newScale > 0 && Math.Abs(newScale - scale) > 0.001f)
+                {
+                    var suggested = (RECT)Marshal.PtrToStructure(m.LParam, typeof(RECT));
+                    Rescale(newScale);
+                    Location = new Point(suggested.Left, suggested.Top);
+                }
+                m.Result = IntPtr.Zero;
+                return;
+            }
             base.WndProc(ref m);
+        }
+
+        // Spacing of each control as laid out at baseScale; rescaling always starts from these so
+        // that dragging back and forth doesn't accumulate rounding.
+        class Metrics { public Padding Margin, Padding; public Size MinimumSize, MaximumSize; }
+        Dictionary<Control, Metrics> metrics;
+
+        static IEnumerable<Control> SelfAndDescendants(Control c)
+        {
+            yield return c;
+            foreach (Control child in c.Controls)
+                foreach (var d in SelfAndDescendants(child)) yield return d;
+        }
+
+        static int Round(float v) { return (int)Math.Round(v); }
+        static Padding Mul(Padding p, float f) { return new Padding(Round(p.Left * f), Round(p.Top * f), Round(p.Right * f), Round(p.Bottom * f)); }
+        static Size Mul(Size s, float f) { return new Size(Round(s.Width * f), Round(s.Height * f)); }
+
+        void Rescale(float newScale)
+        {
+            if (metrics == null)
+            {
+                metrics = new Dictionary<Control, Metrics>();
+                foreach (var c in SelfAndDescendants(this))
+                    metrics[c] = new Metrics { Margin = c.Margin, Padding = c.Padding, MinimumSize = c.MinimumSize, MaximumSize = c.MaximumSize };
+            }
+
+            Font oldBase = Font, oldTitle = TitleFont;
+            scale = newScale;
+            Font newBase = PixelFont("Segoe UI", 9f);
+            TitleFont = PixelFont("Segoe UI Semibold", 14f);
+            float f = scale / baseScale;
+
+            SuspendLayout();
+            foreach (var c in SelfAndDescendants(this))
+            {
+                if (ReferenceEquals(c.Font, oldTitle)) c.Font = TitleFont;
+                else if (ReferenceEquals(c.Font, oldBase)) c.Font = newBase; // set explicitly by Line(), or the form's own
+                Metrics mt;
+                if (metrics.TryGetValue(c, out mt))
+                {
+                    c.Margin = Mul(mt.Margin, f);
+                    c.Padding = Mul(mt.Padding, f);
+                    c.MinimumSize = Mul(mt.MinimumSize, f);
+                    c.MaximumSize = Mul(mt.MaximumSize, f);
+                }
+                var check = c as DarkCheckBox;
+                if (check != null) { check.k = scale; check.Invalidate(); }
+            }
+            if (logoBox != null)
+            {
+                var logo = AppIcon(S(48));
+                if (logo != null) { var old = logoBox.Image; logoBox.Image = logo; if (old != null) old.Dispose(); }
+            }
+            layout.Location = new Point(Padding.Left, Padding.Top);
+            ResumeLayout(true);
+            PerformLayout();
+            oldBase.Dispose();
+            oldTitle.Dispose();
         }
 
         protected override void OnHandleCreated(EventArgs e)
