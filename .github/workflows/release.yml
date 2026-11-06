@@ -1,33 +1,52 @@
-# Builds PowerModeToggle.exe and PowerModeToggle-Setup.exe when a version tag (v1.2.3) is pushed,
-# and attaches them with their SHA-256 checksums to a draft GitHub release.
+# Builds PowerModeToggle.exe and PowerModeToggle-Setup.exe and attaches them with their SHA-256
+# checksums to a GitHub release. Runs when a version tag (v1.2.3) is pushed, which creates a draft,
+# or from the Actions tab ("Run workflow"), which creates the tag on the chosen branch itself.
 # See "Releasing" in README.md.
 name: Release
 
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, e.g. 1.7.0. Must match AssemblyVersion on the chosen branch.
+        required: true
+      notes:
+        description: Release notes in Markdown (what changed). The download section and checksums are added.
+        required: false
+      draft:
+        description: Create the release as a draft
+        type: boolean
+        default: true
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
 
 jobs:
   release:
     runs-on: windows-latest
     env:
-      TAG: ${{ github.ref_name }}
+      TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
       # actions/checkout turns an annotated tag into a lightweight one; fetch it again for its message.
       - name: Fetch tag
+        if: github.event_name == 'push'
         run: git fetch --force origin "refs/tags/${env:TAG}:refs/tags/${env:TAG}"
 
       - name: Check version
         shell: pwsh
         run: |
+          if ($env:TAG -notmatch '^v\d+\.\d+\.\d+$') { throw "Version must look like 1.2.3, got $($env:TAG.Substring(1))." }
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+              $global:LASTEXITCODE = 0
+              if (git ls-remote --tags origin "refs/tags/$env:TAG") { throw "Tag $env:TAG already exists." }
+          }
           $version = $env:TAG.Substring(1)
           $m = Select-String -Path PowerModeToggle.cs -Pattern 'AssemblyVersion\("(\d+\.\d+\.\d+)\.\d+"\)'
           if (-not $m) { throw "AssemblyVersion not found in PowerModeToggle.cs" }
@@ -54,10 +73,12 @@ jobs:
           [IO.File]::WriteAllText("$PWD/checksums.md", "| File | SHA-256 |`n|---|---|`n$table`n")
           Get-Content SHA256SUMS.txt
 
-      - name: Create draft release
+      - name: Create release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ inputs.notes }}
+          DRAFT: ${{ inputs.draft }}
         run: |
           $assets = 'PowerModeToggle-Setup.exe', 'PowerModeToggle.exe', 'SHA256SUMS.txt'
           gh release view $env:TAG *> $null
@@ -73,9 +94,10 @@ jobs:
           $global:LASTEXITCODE = 0
 
           [Console]::OutputEncoding = [Text.Encoding]::UTF8  # read git's UTF-8 output correctly
-          # The notes start with the tag message of an annotated tag, or a placeholder to replace.
-          $notes = ''
-          if ((git cat-file -t "refs/tags/$env:TAG") -eq 'tag') {
+          # The notes start with the run's notes input, or the tag message of an annotated tag,
+          # or a placeholder to replace.
+          $notes = "$env:NOTES"
+          if (-not $notes.Trim() -and (git cat-file -t "refs/tags/$env:TAG" 2>$null) -eq 'tag') {
               $notes = (git tag -l --format='%(contents:body)' $env:TAG) -join "`n"
               if (-not $notes.Trim()) { $notes = (git tag -l --format='%(contents:subject)' $env:TAG) -join "`n" }
           }
@@ -94,5 +116,12 @@ jobs:
           "@
           [IO.File]::WriteAllText("$PWD/notes.md", $body)
 
-          gh release create $env:TAG @assets --draft --verify-tag --title "Power Mode Toggle $env:VERSION" --notes-file notes.md
+          $options = @('--title', "Power Mode Toggle $env:VERSION", '--notes-file', 'notes.md')
+          if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
+              $options += '--target', $env:GITHUB_SHA # creates the tag on the built commit
+              if ($env:DRAFT -eq 'true') { $options += '--draft' }
+          } else {
+              $options += '--verify-tag', '--draft'
+          }
+          gh release create $env:TAG @assets @options
           if ($LASTEXITCODE -ne 0) { throw "Creating the release failed" }
