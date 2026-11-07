@@ -32,7 +32,8 @@ checkboxes, and SHALL appear without a white flash in dark mode.
 - **THEN** the whole window is dark from the moment it appears
 
 ### Requirement: Opens on the right monitor
-A dialog SHALL open centered on the monitor where the user clicked the tray icon.
+A dialog SHALL open centered on the monitor with the mouse pointer. For the About window, that is the
+monitor whose tray icon the user clicked.
 
 #### Scenario: Second monitor
 - **WHEN** the user opens About from the taskbar on the second monitor
