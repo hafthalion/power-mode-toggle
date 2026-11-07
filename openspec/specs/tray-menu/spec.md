@@ -5,55 +5,46 @@ Give access to every mode and option from a right-click menu on the tray icon.
 
 ## Requirements
 
-### Requirement: Menu contents and order
-Right-clicking the tray icon SHALL open a menu with, in order: a disabled "Power mode" title; radio
-items "Best efficiency", "Balanced", "Best performance"; a separator; "Toggle efficiency /
-performance" shown bold as the left-click action; a separator; "Start with Windows", "Show
-notifications", "Edit settings file..."; a separator; the update item ("Check for updates"),
-"About Power Mode Toggle" and "Exit".
+### Requirement: Menu items
+Right-clicking the icon SHALL open a menu with:
+- the three modes, with the current one marked,
+- "Toggle efficiency / performance", shown bold as the click action,
+- "Start with Windows" and "Show notifications", checked when on,
+- "Edit settings file...",
+- "Check for updates" (or "Install version x.y.z..." when an update is waiting),
+- "About Power Mode Toggle",
+- "Exit".
 
-#### Scenario: Picking Balanced
+#### Scenario: Picking a mode
 - **WHEN** the user picks "Balanced" in the menu
-- **THEN** the mode becomes Balanced, with no notification on success
+- **THEN** the mode becomes Balanced and the menu marks it next time
 
-### Requirement: Current state shown when the menu opens
-When the menu opens, the system SHALL refresh the mode and check the radio item of the current mode
-(none when Unknown), check "Start with Windows" when the autostart entry exists, and check "Show
-notifications" according to the setting.
+#### Scenario: Exit
+- **WHEN** the user picks "Exit"
+- **THEN** the icon disappears and the shortcuts stop working
 
-#### Scenario: Autostart turned off elsewhere
-- **WHEN** the Run entry was removed outside the app and the user opens the menu
-- **THEN** "Start with Windows" is unchecked
+### Requirement: Shortcuts shown
+The mode items and the toggle item SHALL show their keyboard shortcut, or "(unavailable)" when the
+shortcut could not be set up.
 
-### Requirement: Hotkeys shown as shortcuts
-The mode items and the toggle item SHALL show their registered hotkey right-aligned like a shortcut,
-or "(unavailable)" when the hotkey could not be registered, and nothing when the hotkey is turned off.
-
-#### Scenario: Hotkey in use
-- **WHEN** the efficiency hotkey is already used by another program
-- **THEN** the "Best efficiency" item shows "(unavailable)"
+#### Scenario: Shortcut taken by another app
+- **WHEN** another program already uses the Best efficiency shortcut
+- **THEN** the menu shows "(unavailable)" next to Best efficiency
 
 ### Requirement: Option items
-"Start with Windows" SHALL toggle the autostart entry and show an error notification if that fails.
-"Show notifications" SHALL toggle the `ShowNotifications` setting and save the settings file.
+"Start with Windows" and "Show notifications" SHALL turn their option on or off and remember it.
 "Edit settings file..." SHALL open the settings file in Notepad. "About Power Mode Toggle" SHALL open
-the About window. "Exit" SHALL remove the tray icon, unregister the hotkeys and end the app.
+the About window.
 
 #### Scenario: Turning notifications off
 - **WHEN** the user clicks "Show notifications" while it is checked
-- **THEN** `ShowNotifications=false` is written to the settings file
+- **THEN** no notification is shown after the next shortcut switch, also after a restart
 
-### Requirement: Native menu that follows the Windows mode
-The menu SHALL be a native Win32 menu (not a WinForms `ContextMenuStrip`) so it has the Windows 11 look.
-Right before it opens, the system SHALL opt the process into dark or light menus to match the
-"Windows mode" (`SystemUsesLightTheme`) using the undocumented `uxtheme.dll` ordinals #135
-(`SetPreferredAppMode`) and #136 (`FlushMenuThemes`). On Windows versions without them the menu SHALL
-stay light without errors.
+### Requirement: Windows look and dark mode
+The menu SHALL look like a native Windows 11 menu and follow the light or dark Windows mode, including
+when the mode changes while the app runs. On Windows versions that don't support dark menus it SHALL stay
+light.
 
 #### Scenario: Dark Windows mode
 - **WHEN** the Windows mode is dark and the user right-clicks the icon
-- **THEN** the menu is drawn dark
-
-#### Scenario: Theme changed while running
-- **WHEN** the user switches the Windows mode from dark to light and opens the menu again
-- **THEN** the menu is drawn light
+- **THEN** the menu is dark

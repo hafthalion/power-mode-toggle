@@ -1,62 +1,49 @@
 # release Specification
 
 ## Purpose
-Publish a version as a GitHub release with both exes and their checksums, built by GitHub Actions.
+Let the maintainer publish a new version in a few clicks, so users get it through the app's updates.
 
 ## Requirements
 
-### Requirement: Version source and triggers
-The version SHALL come from `[assembly: AssemblyVersion("x.y.z.0")]` in `PowerModeToggle.cs`, shared by
-the app and the setup. The Release workflow SHALL run when a tag `vX.Y.Z` is pushed, or from
-**Actions → Release → Run workflow** with the inputs `version` (required), `notes` (Markdown, optional)
-and `draft` (default true). Only one release run SHALL run at a time.
+### Requirement: Start a release
+The maintainer SHALL be able to release a version either from GitHub's Actions tab, entering the
+version, the release notes and whether to make a draft, or by pushing a version tag. Both SHALL build
+the app on GitHub, not on the maintainer's PC.
 
 #### Scenario: Release from the Actions tab
-- **WHEN** the user runs the workflow on `main` with version 1.7.0 and draft unchecked
-- **THEN** the tag `v1.7.0` is created on the built commit and the release is published right away
+- **WHEN** the maintainer runs the release for 1.7.0 with notes and "draft" unchecked
+- **THEN** release "Power Mode Toggle 1.7.0" is published and users' apps can find it
 
-### Requirement: Version check
-The workflow SHALL fail without creating a release if the version does not look like `1.2.3`, if the
-tag does not match `AssemblyVersion`, or, for a manual run, if the tag already exists.
+### Requirement: Safe versioning
+A release SHALL only be made when the entered version matches the app's version, and SHALL NOT replace
+an existing version when started from the Actions tab.
 
-#### Scenario: Forgot to bump the version
-- **WHEN** the tag `v1.7.0` is pushed but `AssemblyVersion` is still 1.6.8
-- **THEN** the workflow fails with a message to bump the version, commit and tag that commit
+#### Scenario: Version not bumped
+- **WHEN** the maintainer releases 1.7.0 but the app's version is still 1.6.8
+- **THEN** no release is created and the reason is shown
 
-### Requirement: Build and name the assets
-The workflow SHALL build with `build.ps1` on a Windows runner using Windows PowerShell, rename the setup
-to `PowerModeToggle-Setup-<version>.exe`, and attach it, `PowerModeToggle.exe` and `SHA256SUMS.txt` to
-the release. `SHA256SUMS.txt` SHALL be in `sha256sum` format (lowercase hash, two spaces, name, LF
-endings) so `sha256sum -c` works and the app's updater can read it.
+### Requirement: Release contents
+Each release SHALL contain the setup `PowerModeToggle-Setup-x.y.z.exe`, the portable
+`PowerModeToggle.exe`, and a checksum file. Its notes SHALL start with the maintainer's notes and end
+with a download section recommending the setup, the checksums of both files, and a hint about the
+Windows SmartScreen warning for unsigned apps.
 
-#### Scenario: Release assets
-- **WHEN** the workflow releases 1.7.0
-- **THEN** the release has `PowerModeToggle-Setup-1.7.0.exe`, `PowerModeToggle.exe` and `SHA256SUMS.txt`
-
-### Requirement: Release notes
-The release SHALL be titled "Power Mode Toggle <version>". Its notes SHALL start with the `notes`
-input, otherwise the body of the annotated tag message (the subject if there is no body), otherwise a
-"TODO" placeholder, and SHALL end with a Download section (setup recommended, exe for portable use), a
-SHA-256 table of both exes, and a SmartScreen note about the unsigned exes. Tag messages created with
-`--cleanup=whitespace` SHALL keep Markdown headings.
-
-#### Scenario: Annotated tag with notes
-- **WHEN** the tag message is "Power Mode Toggle 1.7.0" followed by "## Changed" and a list
-- **THEN** the release notes start with "## Changed" and the list
+#### Scenario: Release page
+- **WHEN** a user opens the 1.7.0 release page
+- **THEN** they see what changed, which file to download, and the checksums
 
 ### Requirement: Draft or published
-A tag push SHALL create a draft release of the existing tag (`--verify-tag`) for the user to review and
-publish. A manual run SHALL create a draft or a published release according to `draft`. Only published
-releases SHALL be offered to the app's update check.
+A release started from a tag SHALL be created as a draft for the maintainer to review and publish.
+A release from the Actions tab SHALL be a draft or published right away, as chosen. Users' apps SHALL
+only see published releases.
 
-#### Scenario: Draft not yet published
-- **WHEN** a draft release 1.7.0 exists and the app checks for updates
-- **THEN** the app does not see 1.7.0
+#### Scenario: Draft
+- **WHEN** a draft for 1.7.0 exists
+- **THEN** users' apps don't offer 1.7.0 until it is published
 
-### Requirement: Re-running for an existing release
-If a release for the tag already exists, the workflow SHALL only replace its files and leave its notes
-alone, and SHALL print the new checksum table in the log for the user to copy.
+### Requirement: Re-running a release
+Running a release again for a version that already exists SHALL only replace its files and keep its notes.
 
-#### Scenario: Re-run after a failed upload
-- **WHEN** the workflow is re-run for an existing release v1.7.0
-- **THEN** its three files are replaced and its notes are unchanged
+#### Scenario: Re-run
+- **WHEN** the maintainer re-runs the release for 1.7.0
+- **THEN** its files are rebuilt and its notes stay as they were

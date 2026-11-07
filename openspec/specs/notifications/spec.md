@@ -1,43 +1,38 @@
 # notifications Specification
 
 ## Purpose
-Show the result of hotkey switches, warnings and errors as modern Windows notifications.
+Tell the user what happened when there is no other visible feedback, and warn about problems.
 
 ## Requirements
 
-### Requirement: Toast notifications with the app's identity
-At startup the system SHALL set the process AppUserModelID to `PowerModeToggle` and create or update the
-Start menu shortcut `Power Mode Toggle.lnk` in the user's Programs folder, pointing at the running exe and
-carrying that AppUserModelID, because Windows only shows toast pop-ups from unpackaged desktop apps that
-have such a shortcut. The shortcut SHALL be re-created on every start so it follows the exe if it moves.
-The notification header SHALL show "Power Mode Toggle" and the exe icon.
-
-#### Scenario: Exe moved
-- **WHEN** the user moves the portable exe to another folder and starts it
-- **THEN** the Start menu shortcut points at the new location and notifications still appear
-
-### Requirement: Mode notifications
-A mode notification SHALL be a short toast with the mode name as text and the mode's colored bolt as
-its logo, drawn as a 128 px PNG with the icon at 88 px and transparent padding. It SHALL be silent, SHALL
-replace the previous mode toast instead of stacking, and SHALL expire after 15 seconds. The images SHALL
-be written to `%TEMP%\PowerModeToggle\` once per run and again when missing.
+### Requirement: Mode notification
+After a shortcut switch, the app SHALL show a short, silent Windows notification with the new mode's
+name and colored icon. A new mode notification SHALL replace the previous one instead of piling up.
 
 #### Scenario: Two quick switches
-- **WHEN** the user presses the toggle hotkey twice in a row
-- **THEN** the second toast replaces the first
+- **WHEN** the user presses the toggle shortcut twice in a row
+- **THEN** only the latest mode is shown
 
-### Requirement: Message notifications
-Warnings, errors and update messages SHALL be toasts with a title and text, the default sound, no logo,
-and SHALL replace the previous message toast. Errors SHALL be shown regardless of `ShowNotifications`.
+### Requirement: Warnings and errors
+Warnings, errors and update messages SHALL be shown as notifications with a title and the normal
+notification sound. Errors SHALL be shown even when notifications are turned off.
 
-#### Scenario: Error while notifications are off
-- **WHEN** `ShowNotifications=false` and a switch fails
-- **THEN** the error notification is still shown
+#### Scenario: Error with notifications off
+- **WHEN** notifications are off and a switch fails
+- **THEN** the error is still shown
 
-### Requirement: Balloon fallback
-If toasts are unavailable or fail, the system SHALL show the same title and text as a tray balloon tip
-with an info, warning or error icon.
+### Requirement: App identity
+Notifications SHALL show "Power Mode Toggle" and the app icon as their sender, also for the portable
+version and after the app file was moved.
 
-#### Scenario: WinRT unavailable
-- **WHEN** creating the toast throws
-- **THEN** a tray balloon with the same text is shown
+#### Scenario: Portable app moved
+- **WHEN** the user moves the portable app to another folder and starts it
+- **THEN** notifications still appear with the app's name and icon
+
+### Requirement: Fallback
+If Windows notifications are not available, the app SHALL show the same message as a balloon at the
+tray icon.
+
+#### Scenario: Notifications unavailable
+- **WHEN** Windows can't show the notification
+- **THEN** a balloon with the same text appears at the tray icon
