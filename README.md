@@ -135,7 +135,7 @@ Releases are built by GitHub Actions ([`.github/workflows/release.yml`](.github/
 
 **Without pushing a tag:** after step 1, open **Actions → Release → Run workflow** on `main` and enter the version, the notes (Markdown), and whether to create a draft. The workflow creates the tag on the commit it built. If you leave **draft** unchecked, the release is published right away. It fails if the tag already exists.
 
-If the tag doesn't match the version, the workflow fails without creating a release: delete the tag (`git push origin :refs/tags/v1.7.0` and `git tag -d v1.7.0`), fix the version and tag again. If a release for a pushed tag already exists, re-running the workflow replaces its files but leaves its notes alone, so update the checksum table from the workflow log. A run from the Actions tab can't be repeated for a version that already exists, because it stops when the tag is there; push the tag instead to rebuild the files of an existing release.
+If the tag doesn't match the version, the workflow fails without creating a release: delete the tag (`git push origin :refs/tags/v1.7.0` and `git tag -d v1.7.0`), fix the version and tag again. If a release for a pushed tag already exists, re-running the workflow replaces its files but leaves its notes alone, so update the checksum table from the workflow log. A run from the Actions tab can't be repeated for a version that already exists, because it stops when the tag is already there.
 
 ## Notes
 
