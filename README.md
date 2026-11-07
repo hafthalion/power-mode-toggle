@@ -112,6 +112,8 @@ This produces `PowerModeToggle.exe` and the installer `PowerModeToggle-Setup.exe
 | `app.ico` | Exe icon, also used for the Start menu shortcut and the notification header. `build.ps1` regenerates it from the app's Balanced tray icon on every build, so don't edit it by hand. |
 | `build.ps1` | Build script |
 
+The app's requirements are written down as [OpenSpec](https://github.com/Fission-AI/OpenSpec) specs in [`openspec/`](openspec/project.md), one spec per capability. Keep them in step with the code when behavior changes.
+
 That compiler only supports **C# 5**, so newer syntax such as `$"..."` strings, `?.` and `=>` members won't compile.
 
 ## Releasing
