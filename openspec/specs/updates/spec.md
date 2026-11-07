@@ -30,12 +30,17 @@ version is being downloaded. While it is checking or downloading, the item SHALL
 ### Requirement: Download, verify and start the setup
 When a newer version is found, the app SHALL say that it is available, download that release's setup,
 check it against the checksum published with the release, and start it. The user SHALL then only need to
-click **Update** in the setup, which replaces the running app and keeps the settings. A setup that does
+click **Update** (or **Install** when the app wasn't installed before) in the setup, which replaces the
+running app and keeps the settings. A setup that does
 not match its checksum SHALL never be started.
 
 #### Scenario: Update found
 - **WHEN** version 1.7.0 is published and the app finds it
 - **THEN** the 1.7.0 setup opens, and after the user clicks Update the app runs version 1.7.0 with the same settings
+
+#### Scenario: Update of the portable app
+- **WHEN** the user runs the portable app without having installed it, and it finds version 1.7.0
+- **THEN** the setup offers **Install**, closes the portable app, and from then on the installed 1.7.0 runs with the same settings
 
 #### Scenario: Damaged download
 - **WHEN** the downloaded setup doesn't match its checksum

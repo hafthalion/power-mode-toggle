@@ -18,7 +18,7 @@ Edits made by hand SHALL apply after restarting the app.
 ### Requirement: Options
 The settings file SHALL hold the three shortcuts, whether notifications are shown after a shortcut
 switch (on by default), and whether the app looks for updates automatically (on by default). The file
-SHALL explain its options in comments.
+SHALL explain in comments how to write a shortcut, how to turn one off, and what the update option does.
 
 #### Scenario: Turning off automatic updates
 - **WHEN** the user sets `CheckForUpdates=false` and restarts the app

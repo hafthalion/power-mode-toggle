@@ -42,8 +42,14 @@ only see published releases.
 - **THEN** users' apps don't offer 1.7.0 until it is published
 
 ### Requirement: Re-running a release
-Running a release again for a version that already exists SHALL only replace its files and keep its notes.
+Re-running a release that was started by pushing a tag, for a version whose release already exists,
+SHALL only replace its files and keep its notes. A release started from the Actions tab SHALL NOT be
+re-run for a version that already exists (see Safe versioning).
 
-#### Scenario: Re-run
-- **WHEN** the maintainer re-runs the release for 1.7.0
+#### Scenario: Re-run of a tag release
+- **WHEN** the maintainer re-runs the tag-started release for 1.7.0
 - **THEN** its files are rebuilt and its notes stay as they were
+
+#### Scenario: Actions tab with an existing version
+- **WHEN** the maintainer starts a release for 1.7.0 from the Actions tab and 1.7.0 already exists
+- **THEN** nothing is changed and the reason is shown
