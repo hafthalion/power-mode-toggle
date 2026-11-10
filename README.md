@@ -145,3 +145,20 @@ If the tag doesn't match the version, the workflow fails without creating a rele
 - **Manufacturer tools:** apps like Lenovo Vantage, ASUS Armoury Crate or Dell Power Manager can override the power mode.
 - **Network access:** the update check is the app's only network access. It sends one request to `api.github.com` for the latest release of this repository and, when there's a newer one, downloads its setup and `SHA256SUMS.txt` from GitHub. Set `CheckForUpdates=false` to stop the automatic checks.
 - **Unsigned exe:** the exe isn't digitally signed. If you copy it to another PC through a download or email, Windows SmartScreen may warn you. Right-click the exe → **Properties** → tick **Unblock**.
+
+## Code signing policy
+
+Free code signing is provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+Only the release exes built by this repository's [Release workflow](.github/workflows/release.yml) from its source are signed.
+
+- Committers and reviewers: [hafthalion](https://github.com/hafthalion)
+- Approvers: [hafthalion](https://github.com/hafthalion)
+
+## Privacy policy
+
+This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. The one exception is the update check, which is on by default and described under **Network access** in [Notes](#notes): it asks GitHub for the latest release of this repository and sends nothing about you or your PC beyond what any web request sends. Set `CheckForUpdates=false` to turn it off.
+
+## License
+
+[MIT](LICENSE) © 2026 Hafnium
