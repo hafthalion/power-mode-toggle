@@ -99,8 +99,18 @@ namespace PowerModeToggle
             TryDeleteDir(Path.Combine(Path.GetTempPath(), "PowerModeToggle"));
             if (deleteSettings) TryDeleteDir(Path.GetDirectoryName(Settings.FilePath));
             TryDelete(AppPath);
+            Log("Uninstall " + Version + " from " + Application.ExecutablePath + ", working directory " + Environment.CurrentDirectory
+                + ", running from install folder: " + RunningFromInstallDir);
             if (RunningFromInstallDir) MoveSelfOut();
             DeleteInstallDir();
+            Log(Directory.Exists(InstallDir) ? "Install folder still exists: " + string.Join(", ", Directory.GetFileSystemEntries(InstallDir)) : "Install folder deleted.");
+        }
+
+        // Temporary diagnostics while the install folder removal is tested: %TEMP%\PowerModeToggle-Uninstall.log
+        static void Log(string line)
+        {
+            try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "PowerModeToggle-Uninstall.log"), DateTime.Now.ToString("s") + " " + line + Environment.NewLine); }
+            catch { }
         }
 
         // Uninstall.exe can't delete itself while it runs, but Windows lets a running exe be moved.
@@ -115,9 +125,11 @@ namespace PowerModeToggle
             {
                 Directory.CreateDirectory(MovedUninstallerDir);
                 Directory.SetCurrentDirectory(MovedUninstallerDir);
-                File.Move(Application.ExecutablePath, Path.Combine(MovedUninstallerDir, Guid.NewGuid().ToString("N") + ".exe"));
+                var target = Path.Combine(MovedUninstallerDir, Guid.NewGuid().ToString("N") + ".exe");
+                File.Move(Application.ExecutablePath, target);
+                Log("Moved to " + target);
             }
-            catch { } // e.g. %TEMP% on another drive: only Uninstall.exe stays behind
+            catch (Exception ex) { Log("Move failed: " + ex); } // e.g. %TEMP% on another drive: only Uninstall.exe stays behind
         }
 
         // An antivirus scan can hold a file for a moment, so retry for a few seconds.
@@ -126,7 +138,11 @@ namespace PowerModeToggle
             for (int i = 0; i < 20 && Directory.Exists(InstallDir); i++)
             {
                 try { Directory.Delete(InstallDir, true); }
-                catch { System.Threading.Thread.Sleep(250); }
+                catch (Exception ex)
+                {
+                    if (i == 0 || i == 19) Log("Delete attempt " + (i + 1) + " failed: " + ex.GetType().Name + ": " + ex.Message);
+                    System.Threading.Thread.Sleep(250);
+                }
             }
         }
 
