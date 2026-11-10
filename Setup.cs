@@ -99,7 +99,18 @@ namespace PowerModeToggle
             TryDeleteDir(Path.Combine(Path.GetTempPath(), "PowerModeToggle"));
             if (deleteSettings) TryDeleteDir(Path.GetDirectoryName(Settings.FilePath));
             TryDelete(AppPath);
-            TryDeleteDir(InstallDir);
+            DeleteInstallDir();
+        }
+
+        // Right after Uninstall.exe in the folder exits, Windows or an antivirus scan can still hold it
+        // for a moment, so retry for a few seconds.
+        static void DeleteInstallDir()
+        {
+            for (int i = 0; i < 20 && Directory.Exists(InstallDir); i++)
+            {
+                try { Directory.Delete(InstallDir, true); }
+                catch { System.Threading.Thread.Sleep(250); }
+            }
         }
 
         // Uninstall.exe can't delete itself while it runs. Settings > Apps starts it from the install folder,
@@ -112,7 +123,8 @@ namespace PowerModeToggle
             Directory.CreateDirectory(UninstallCopyDir);
             var copy = Path.Combine(UninstallCopyDir, UninstallerName);
             File.Copy(Application.ExecutablePath, copy, true);
-            Process.Start(copy, "--uninstall");
+            // Not the inherited working directory: that is often the install folder, which then can't be deleted.
+            Process.Start(new ProcessStartInfo(copy, "--uninstall") { WorkingDirectory = UninstallCopyDir });
         }
 
         static void TryDelete(string file) { try { if (File.Exists(file)) File.Delete(file); } catch { } }
