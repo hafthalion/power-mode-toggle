@@ -62,7 +62,7 @@ namespace PowerModeToggle
         public static void Install(bool autostart)
         {
             StopApp();
-            TryDeleteDir(UninstallCopyDir);
+            TryDeleteDir(MovedUninstallerDir);
             Directory.CreateDirectory(InstallDir);
             var app = AppBytes();
             File.WriteAllBytes(AppPath, app);
@@ -99,11 +99,28 @@ namespace PowerModeToggle
             TryDeleteDir(Path.Combine(Path.GetTempPath(), "PowerModeToggle"));
             if (deleteSettings) TryDeleteDir(Path.GetDirectoryName(Settings.FilePath));
             TryDelete(AppPath);
+            if (RunningFromInstallDir) MoveSelfOut();
             DeleteInstallDir();
         }
 
-        // Right after Uninstall.exe in the folder exits, Windows or an antivirus scan can still hold it
-        // for a moment, so retry for a few seconds.
+        // Uninstall.exe can't delete itself while it runs, but Windows lets a running exe be moved.
+        // Settings > Apps starts it from the install folder, so it moves itself to %TEMP% and leaves
+        // that folder as its working directory, which frees the install folder to be deleted. The
+        // next install deletes the moved file; otherwise Windows' temp cleanup does.
+        static string MovedUninstallerDir { get { return Path.Combine(Path.GetTempPath(), "PowerModeToggle-Uninstall"); } }
+
+        static void MoveSelfOut()
+        {
+            try
+            {
+                Directory.CreateDirectory(MovedUninstallerDir);
+                Directory.SetCurrentDirectory(MovedUninstallerDir);
+                File.Move(Application.ExecutablePath, Path.Combine(MovedUninstallerDir, Guid.NewGuid().ToString("N") + ".exe"));
+            }
+            catch { } // e.g. %TEMP% on another drive: only Uninstall.exe stays behind
+        }
+
+        // An antivirus scan can hold a file for a moment, so retry for a few seconds.
         static void DeleteInstallDir()
         {
             for (int i = 0; i < 20 && Directory.Exists(InstallDir); i++)
@@ -111,20 +128,6 @@ namespace PowerModeToggle
                 try { Directory.Delete(InstallDir, true); }
                 catch { System.Threading.Thread.Sleep(250); }
             }
-        }
-
-        // Uninstall.exe can't delete itself while it runs. Settings > Apps starts it from the install folder,
-        // so it runs a copy of itself from %TEMP% instead (as common installers do), which can then
-        // remove the whole install folder. The copy is cleaned up by the next install.
-        static string UninstallCopyDir { get { return Path.Combine(Path.GetTempPath(), "PowerModeToggle-Uninstall"); } }
-
-        public static void RestartFromTemp()
-        {
-            Directory.CreateDirectory(UninstallCopyDir);
-            var copy = Path.Combine(UninstallCopyDir, UninstallerName);
-            File.Copy(Application.ExecutablePath, copy, true);
-            // Not the inherited working directory: that is often the install folder, which then can't be deleted.
-            Process.Start(new ProcessStartInfo(copy, "--uninstall") { WorkingDirectory = UninstallCopyDir });
         }
 
         static void TryDelete(string file) { try { if (File.Exists(file)) File.Delete(file); } catch { } }
@@ -202,11 +205,6 @@ namespace PowerModeToggle
         {
             bool uninstall = Array.Exists(args, a => a.Equals("--uninstall", StringComparison.OrdinalIgnoreCase)
                                                   || a.Equals("/uninstall", StringComparison.OrdinalIgnoreCase));
-            if (uninstall && Installer.RunningFromInstallDir)
-            {
-                try { Installer.RestartFromTemp(); return; }
-                catch { } // fall back to uninstalling from here; only Uninstall.exe stays behind
-            }
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             var form = new SetupForm(uninstall);
