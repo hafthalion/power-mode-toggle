@@ -6,7 +6,7 @@ Power Mode Toggle is a small Windows tray app that switches the Windows power mo
 Power mode, with one click or a keyboard shortcut. It runs without administrator rights, can be
 used as a single portable file or installed with a setup, and keeps itself up to date.
 
-These specs describe what the app does for its users as of version 1.6.8. How it is built is
+These specs describe what the app does for its users as of version 1.6.9. How it is built is
 described in the README.
 
 ## Capabilities

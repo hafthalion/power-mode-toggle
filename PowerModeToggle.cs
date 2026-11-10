@@ -23,8 +23,11 @@ using Microsoft.Win32;
 #else
 [assembly: AssemblyTitle("Power Mode Toggle")]
 #endif
+[assembly: AssemblyDescription("Switches the Windows power mode from the notification area or a keyboard shortcut.")]
+[assembly: AssemblyCompany("Hafnium")]
 [assembly: AssemblyProduct("Power Mode Toggle")]
-[assembly: AssemblyVersion("1.6.8.0")]
+[assembly: AssemblyCopyright("Copyright \u00A9 2026 Hafnium")]
+[assembly: AssemblyVersion("1.6.9.0")]
 
 namespace PowerModeToggle
 {
