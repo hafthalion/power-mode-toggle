@@ -33,12 +33,25 @@ keep the settings.
 
 ### Requirement: Uninstall
 The app SHALL be removable from Settings → Apps → Installed apps. Uninstalling SHALL close the app and
-remove it, its Start menu entry and its startup entry, and SHALL let the user choose to also delete the
-settings (kept by default).
+remove it, its Start menu entry, its startup entry and its install folder, and SHALL let the user choose
+to also delete the settings (kept by default). It SHALL do this without starting hidden command windows,
+which antivirus software treats as suspicious.
 
 #### Scenario: Keep settings
 - **WHEN** the user uninstalls without choosing to delete the settings
 - **THEN** a later install uses the same settings again
+
+#### Scenario: Install folder removed
+- **WHEN** the user uninstalls from Settings → Apps
+- **THEN** the `Power Mode Toggle` folder in `%LOCALAPPDATA%\Programs` is gone
+
+### Requirement: File details
+The setup and the app SHALL show the company **Hafnium**, the product name, a description, a copyright
+and the version in their file properties (Properties → Details).
+
+#### Scenario: Checking the setup's details
+- **WHEN** the user opens Properties → Details of `PowerModeToggle-Setup-x.y.z.exe`
+- **THEN** it shows company Hafnium and version x.y.z
 
 ### Requirement: Portable use
 The app SHALL also be offered as `PowerModeToggle.exe`, which works fully from any folder without

@@ -62,6 +62,7 @@ namespace PowerModeToggle
         public static void Install(bool autostart)
         {
             StopApp();
+            TryDeleteDir(UninstallCopyDir);
             Directory.CreateDirectory(InstallDir);
             var app = AppBytes();
             File.WriteAllBytes(AppPath, app);
@@ -98,15 +99,20 @@ namespace PowerModeToggle
             TryDeleteDir(Path.Combine(Path.GetTempPath(), "PowerModeToggle"));
             if (deleteSettings) TryDeleteDir(Path.GetDirectoryName(Settings.FilePath));
             TryDelete(AppPath);
-            if (!RunningFromInstallDir) TryDeleteDir(InstallDir);
+            TryDeleteDir(InstallDir);
         }
 
-        // Uninstall.exe can't delete itself while running: remove the folder shortly after this process exits.
-        public static void DeleteInstallDirAfterExit()
+        // Uninstall.exe can't delete itself while it runs. Settings > Apps starts it from the install folder,
+        // so it runs a copy of itself from %TEMP% instead (as common installers do), which can then
+        // remove the whole install folder. The copy is cleaned up by the next install.
+        static string UninstallCopyDir { get { return Path.Combine(Path.GetTempPath(), "PowerModeToggle-Uninstall"); } }
+
+        public static void RestartFromTemp()
         {
-            Process.Start(new ProcessStartInfo("cmd.exe",
-                "/c ping -n 3 127.0.0.1 >nul & rmdir /s /q \"" + InstallDir + "\"")
-            { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden });
+            Directory.CreateDirectory(UninstallCopyDir);
+            var copy = Path.Combine(UninstallCopyDir, UninstallerName);
+            File.Copy(Application.ExecutablePath, copy, true);
+            Process.Start(copy, "--uninstall");
         }
 
         static void TryDelete(string file) { try { if (File.Exists(file)) File.Delete(file); } catch { } }
@@ -119,7 +125,6 @@ namespace PowerModeToggle
         readonly Label status, detail; // detail: the install folder (install only)
         readonly CheckBox option;
         readonly Button primary, cancel;
-        public bool Uninstalled { get; private set; }
 
         public SetupForm(bool uninstall)
             : base(uninstall ? "Uninstall Power Mode Toggle" : "Power Mode Toggle Setup")
@@ -158,7 +163,6 @@ namespace PowerModeToggle
                 if (uninstall)
                 {
                     Installer.Uninstall(option.Checked);
-                    Uninstalled = true;
                     status.Text = "Power Mode Toggle was removed.";
                 }
                 else
@@ -186,11 +190,15 @@ namespace PowerModeToggle
         {
             bool uninstall = Array.Exists(args, a => a.Equals("--uninstall", StringComparison.OrdinalIgnoreCase)
                                                   || a.Equals("/uninstall", StringComparison.OrdinalIgnoreCase));
+            if (uninstall && Installer.RunningFromInstallDir)
+            {
+                try { Installer.RestartFromTemp(); return; }
+                catch { } // fall back to uninstalling from here; only Uninstall.exe stays behind
+            }
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             var form = new SetupForm(uninstall);
             Application.Run(form);
-            if (form.Uninstalled && Installer.RunningFromInstallDir) Installer.DeleteInstallDirAfterExit();
         }
     }
 }
