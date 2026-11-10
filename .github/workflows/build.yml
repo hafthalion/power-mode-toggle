@@ -1,4 +1,5 @@
-# Builds both exes on every pull request and push to main, so compile errors show up before a release.
+# Builds both exes on every pull request and push to main, so compile errors show up before a release,
+# and keeps them as a run artifact so a pull request can be tested before it is merged.
 name: Build
 
 on:
@@ -17,3 +18,11 @@ jobs:
       - name: Build
         shell: powershell
         run: ./build.ps1
+      # Lets a pull request be tested on Windows before it's merged: download the exes from the run's Summary page.
+      - name: Upload exes
+        uses: actions/upload-artifact@v4
+        with:
+          name: PowerModeToggle-exes
+          path: |
+            PowerModeToggle.exe
+            PowerModeToggle-Setup.exe
