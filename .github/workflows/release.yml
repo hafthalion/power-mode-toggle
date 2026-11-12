@@ -56,6 +56,11 @@ jobs:
           }
           "VERSION=$version" >> $env:GITHUB_ENV
 
+      # Inno Setup builds the setup; install it when the runner image doesn't have it.
+      - name: Install Inno Setup
+        shell: powershell
+        run: if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe")) { choco install innosetup --no-progress -y; if ($LASTEXITCODE -ne 0) { throw "Installing Inno Setup failed" } }
+
       # Windows PowerShell, as in the README's build command.
       - name: Build
         shell: powershell

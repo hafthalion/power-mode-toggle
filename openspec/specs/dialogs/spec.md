@@ -1,8 +1,9 @@
 # dialogs Specification
 
 ## Purpose
-Show the About window and the setup windows as small, clean Windows 11 style dialogs that match the
-light or dark mode and look right on every monitor.
+Show the About window as a small, clean Windows 11 style dialog that matches the light or dark mode
+and looks right on every monitor. Since 1.7.0 the setup uses the standard Inno Setup wizard (see
+installer), so these requirements no longer cover it.
 
 ## Requirements
 
@@ -13,15 +14,7 @@ Opening About again while it is open SHALL bring the open window to the front.
 
 #### Scenario: Opening About
 - **WHEN** the user picks "About Power Mode Toggle"
-- **THEN** a window shows version 1.6.8, the shortcuts and the settings file location
-
-### Requirement: Consistent look
-The About and setup windows SHALL share one look: the app icon on the left, the text on the right,
-and the buttons at the bottom right.
-
-#### Scenario: Setup next to About
-- **WHEN** the user opens the setup and the About window
-- **THEN** both have the same layout and style
+- **THEN** a window shows version 1.7.0, the shortcuts and the settings file location
 
 ### Requirement: Light and dark mode
 The dialogs SHALL follow the light or dark app mode of Windows, including the title bar, buttons and

@@ -53,12 +53,16 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Build failed" }
     Write-Host "Built $(Join-Path $PSScriptRoot 'PowerModeToggle.exe')"
 
-    # Installer: shares PowerModeToggle.cs (dialog style, version) and embeds the app built above.
-    & $csc /nologo /target:winexe /optimize+ /platform:anycpu /define:SETUP /main:PowerModeToggle.SetupProgram `
-        /win32manifest:app.manifest /win32icon:app.ico `
-        /resource:PowerModeToggle.exe,PowerModeToggle.exe `
-        /out:PowerModeToggle-Setup.exe $references `
-        PowerModeToggle.cs Setup.cs
-    if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+    # Installer: Inno Setup 6 or later (https://jrsoftware.org/isinfo.php), with the version from AssemblyVersion.
+    $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+    if (-not $iscc) {
+        $iscc = "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe", "$env:ProgramFiles\Inno Setup *\ISCC.exe",
+                "$env:LOCALAPPDATA\Programs\Inno Setup *\ISCC.exe" | Resolve-Path -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty Path -Last 1
+    }
+    if (-not $iscc) { throw "ISCC.exe not found. Install Inno Setup 6 (winget install JRSoftware.InnoSetup) to build the setup." }
+    $version = (Select-String -Path PowerModeToggle.cs -Pattern 'AssemblyVersion\("(\d+\.\d+\.\d+)\.\d+"\)').Matches[0].Groups[1].Value
+    & $iscc /Q "/DAppVersion=$version" Setup.iss
+    if ($LASTEXITCODE -ne 0) { throw "Building the setup failed" }
     Write-Host "Built $(Join-Path $PSScriptRoot 'PowerModeToggle-Setup.exe')"
 } finally { Pop-Location }

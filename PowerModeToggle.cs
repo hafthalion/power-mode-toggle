@@ -17,17 +17,13 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 // Windows shows the FileDescription (AssemblyTitle) as the app name on notifications.
-// The installer (Setup.cs, built with /define:SETUP) shares this file and its version.
-#if SETUP
-[assembly: AssemblyTitle("Power Mode Toggle Setup")]
-#else
+// The installer (Setup.iss, Inno Setup) takes its version from AssemblyVersion.
 [assembly: AssemblyTitle("Power Mode Toggle")]
-#endif
 [assembly: AssemblyDescription("Switches the Windows power mode from the notification area or a keyboard shortcut.")]
 [assembly: AssemblyCompany("Hafnium")]
 [assembly: AssemblyProduct("Power Mode Toggle")]
 [assembly: AssemblyCopyright("Copyright \u00A9 2026 Hafnium")]
-[assembly: AssemblyVersion("1.6.9.0")]
+[assembly: AssemblyVersion("1.7.0.0")]
 
 namespace PowerModeToggle
 {
@@ -1074,7 +1070,11 @@ namespace PowerModeToggle
             }
             tray.BalloonTipClicked += delegate { if (newRelease != null && !busy) InstallUpdate(); };
 
-            poll.Tick += delegate { Refresh(); };
+            poll.Tick += delegate
+            {
+                if (Program.ExitRequested.WaitOne(0)) { ExitThread(); return; } // "PowerModeToggle.exe --exit" (the setup)
+                Refresh();
+            };
             poll.Start();
             Refresh();
 
@@ -1122,8 +1122,8 @@ namespace PowerModeToggle
             Background<Updates.Release>("Checking for updates...", Updates.FetchLatest, (latest, error) => UpdateChecked(latest, error, manual));
         }
 
-        // Downloads the new version's setup, checks its SHA-256 and runs it. The setup shows its
-        // Update button, then stops this app and starts the new one.
+        // Downloads the new version's setup, checks its SHA-256 and runs it. The setup closes this app
+        // ("PowerModeToggle.exe --exit") and starts the new one.
         void InstallUpdate()
         {
             if (busy || newRelease == null) return;
@@ -1271,11 +1271,23 @@ namespace PowerModeToggle
 
     static class Program
     {
+        const string MutexName = @"Local\PowerModeToggle.SingleInstance";
+
+        // Set by "PowerModeToggle.exe --exit", which the setup and uninstaller run to close the app
+        // before replacing or removing it. The running app checks it every 2 seconds.
+        public static readonly EventWaitHandle ExitRequested = new EventWaitHandle(false, EventResetMode.ManualReset, @"Local\PowerModeToggle.Exit");
+
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
+            if (Array.Exists(args, a => a.Equals("--exit", StringComparison.OrdinalIgnoreCase)))
+            {
+                ExitRunningApp();
+                return;
+            }
+            ExitRequested.Reset(); // left set if a previous --exit found no app
             bool created;
-            using (new Mutex(true, @"Local\PowerModeToggle.SingleInstance", out created))
+            using (new Mutex(true, MutexName, out created))
             {
                 if (!created) return;
                 Application.EnableVisualStyles();
@@ -1283,6 +1295,19 @@ namespace PowerModeToggle
                 Toast.Register();
                 Autostart.UpdatePath();
                 Application.Run(new TrayApp());
+            }
+        }
+
+        // Asks the running app to exit and waits up to 10 seconds until it has.
+        static void ExitRunningApp()
+        {
+            Mutex running;
+            if (!Mutex.TryOpenExisting(MutexName, out running)) return;
+            using (running)
+            {
+                ExitRequested.Set();
+                try { if (running.WaitOne(10000)) running.ReleaseMutex(); }
+                catch (AbandonedMutexException) { } // the app exited: this is the normal case
             }
         }
     }
