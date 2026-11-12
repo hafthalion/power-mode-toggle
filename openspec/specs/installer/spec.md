@@ -23,12 +23,13 @@ The setup SHALL install the app for the current user only, without administrator
 - **THEN** the app is installed, appears in Settings → Apps and its icon appears in the notification area
 
 ### Requirement: Update an installed app
-When the app is already installed, the setup SHALL say it updates it, show an **Update** button, keep
-the current "Start with Windows" choice, close the running app, replace it, start the new version and
-keep the settings.
+When the app is already installed, the setup SHALL install into the same folder without asking again,
+keep the current "Start with Windows" choice (including a change made in the tray menu), close the
+running app, replace it, start the new version and keep the settings. Updating an install made by a setup
+before 1.7.0 SHALL leave a single entry in Settings → Apps.
 
 #### Scenario: Update while running
-- **WHEN** the app is running and the user runs a newer setup and clicks Update
+- **WHEN** the app is running and the user runs a newer setup and clicks through it
 - **THEN** the new version runs with the same settings
 
 ### Requirement: Uninstall
@@ -44,6 +45,14 @@ which antivirus software treats as suspicious.
 #### Scenario: Install folder removed
 - **WHEN** the user uninstalls from Settings → Apps
 - **THEN** the `Power Mode Toggle` folder in `%LOCALAPPDATA%\Programs` is gone
+
+### Requirement: Well-known installer
+The setup SHALL be built with a widely used installer (Inno Setup), not a custom exe that embeds the app,
+so antivirus software doesn't flag it as a dropper.
+
+#### Scenario: Antivirus scan
+- **WHEN** an antivirus program scans `PowerModeToggle-Setup-x.y.z.exe`
+- **THEN** it sees a standard Inno Setup installer
 
 ### Requirement: File details
 The setup and the app SHALL show the company **Hafnium**, the product name, a description, a copyright

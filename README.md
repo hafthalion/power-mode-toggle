@@ -27,7 +27,7 @@ A small Windows tray utility that switches the Windows power mode between **Best
 
   The menu is the native Windows menu and follows your light or dark Windows mode.
 - **Notifications** when you switch with a hotkey, with the icon of the new mode.
-- **Updates:** at startup and once a day, the app looks for a newer release on GitHub. When there is one, it downloads that release's setup, checks it against the release's SHA-256 checksum, and starts it. Click **Update** in the setup to install the new version; it replaces the running app and keeps your settings. If you cancel, the tray menu offers **Install version x.y.z...** to start it again. **Check for updates** in the menu checks right away. If the download or the checksum check fails, the release page opens instead.
+- **Updates:** at startup and once a day, the app looks for a newer release on GitHub. When there is one, it downloads that release's setup, checks it against the release's SHA-256 checksum, and starts it. Click through the setup to install the new version; it closes the running app, replaces it and keeps your settings. If you cancel, the tray menu offers **Install version x.y.z...** to start it again. **Check for updates** in the menu checks right away. If the download or the checksum check fails, the release page opens instead.
 - Stays in sync if you change the mode in Windows Settings; the tray icon updates within about 2 seconds.
 - Portable: a single small exe with no installer and no admin rights.
 
@@ -39,9 +39,9 @@ A small Windows tray utility that switches the Windows power mode between **Best
 
 ## Install
 
-Download **`PowerModeToggle-Setup-x.y.z.exe`** from the latest release and run it. It installs Power Mode Toggle for your user account in `%LOCALAPPDATA%\Programs\Power Mode Toggle`, without administrator rights, and starts it. Leave **Start with Windows** checked to launch it automatically. Running a newer setup later updates the app and keeps your settings.
+Download **`PowerModeToggle-Setup-x.y.z.exe`** from the latest release and run it. It installs Power Mode Toggle for your user account in `%LOCALAPPDATA%\Programs\Power Mode Toggle`, without administrator rights, and starts it. The setup is built with [Inno Setup](https://jrsoftware.org/isinfo.php). Leave **Start with Windows** checked to launch it automatically. Running a newer setup later updates the app and keeps your settings.
 
-To uninstall, use **Settings → Apps → Installed apps → Power Mode Toggle → Uninstall**. You can choose to keep or delete your settings.
+To uninstall, use **Settings → Apps → Installed apps → Power Mode Toggle → Uninstall**. It asks whether to also delete your settings (kept by default).
 
 ### Portable use
 
@@ -86,8 +86,8 @@ Settings files from version 1.3.x and earlier had a single `Hotkey` for toggling
 | Notification images | `%TEMP%\PowerModeToggle\` | Mode icons for notifications, re-created when missing |
 | Downloaded setup | `%TEMP%\PowerModeToggle\` | `PowerModeToggle-Setup-x.y.z.exe`, only when an update is found |
 | `PowerModeToggle` value | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | Only when **Start with Windows** is on. Updated on every start, so it follows the exe if you move it. |
-| Installed app and `Uninstall.exe` | `%LOCALAPPDATA%\Programs\Power Mode Toggle\` | Only when installed with the setup |
-| **Power Mode Toggle** uninstall entry | `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\PowerModeToggle` | Only when installed with the setup; shows the app in Settings → Apps |
+| Installed app and its uninstaller `unins000.exe` | `%LOCALAPPDATA%\Programs\Power Mode Toggle\` | Only when installed with the setup |
+| **Power Mode Toggle** uninstall entry | `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\PowerModeToggle_is1` (`PowerModeToggle` before 1.7.0) | Only when installed with the setup; shows the app in Settings → Apps |
 
 ### Uninstall (portable use)
 
@@ -96,7 +96,7 @@ Settings files from version 1.3.x and earlier had a single `Hotkey` for toggling
 
 ## Building
 
-The app builds with the C# compiler that ships with Windows, so no SDK is needed:
+The app builds with the C# compiler that ships with Windows, so no SDK is needed. The setup needs [Inno Setup 6](https://jrsoftware.org/isinfo.php) or later (`winget install JRSoftware.InnoSetup`); the GitHub workflows install it when the runner doesn't have it.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build.ps1
@@ -107,7 +107,7 @@ This produces `PowerModeToggle.exe` and the installer `PowerModeToggle-Setup.exe
 | File | Purpose |
 |---|---|
 | `PowerModeToggle.cs` | The app |
-| `Setup.cs` | The installer and uninstaller. It is built together with `PowerModeToggle.cs` (shared version, icons and dialog style) and embeds the app. |
+| `Setup.iss` | The Inno Setup script for the installer and uninstaller. `build.ps1` passes it the version from `AssemblyVersion`. It closes a running app with `PowerModeToggle.exe --exit`. |
 | `app.manifest` | Per-monitor DPI awareness, Windows 10/11 compatibility |
 | `app.ico` | Exe icon, also used for the Start menu shortcut and the notification header. `build.ps1` regenerates it from the app's Balanced tray icon on every build, so don't edit it by hand. |
 | `build.ps1` | Build script |
